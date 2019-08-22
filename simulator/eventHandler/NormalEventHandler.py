@@ -3,9 +3,9 @@ from math import sqrt, ceil
 from random import randint, choice
 from copy import deepcopy
 
+from simulator.UnitState import UnitState
 from simulator.Event import Event
 from simulator.Result import Result
-from simulator.Metadata import Metadata
 from simulator.Log import info_logger, error_logger
 from simulator.unit.Rack import Rack
 from simulator.unit.Machine import Machine
@@ -25,7 +25,7 @@ class Recovery(object):
         return ((self.data_recovered/(self.end-self.start))*24/1024)
 
 
-class ManualNormalEventHandler(object):
+class NormalEventHandler(object):
     """
     Data recovery will not be executed until new disks or nodes join the system.
     TTR: time-to-repair
@@ -42,8 +42,7 @@ class ManualNormalEventHandler(object):
 
         self.num_chunks_diff_racks = self.conf.num_chunks_diff_racks
         self.lost_slice = -100
-        # how to express Long.MAX_VALUE in python?
-        self.min_av_count = 10000000000
+        self.inherit_lost = -200
 
         self.end_time = self.conf.total_time
         self.total_slices_table = self.conf.tableForTotalSlice()
@@ -62,6 +61,8 @@ class ManualNormalEventHandler(object):
         self.lazy_recovery = self.conf.lazy_recovery
         self.recovery_threshold = self.conf.recovery_threshold
 
+        self.parallel_repair = self.conf.parallel_repair
+
         # Lazy recovery threshold can be defined in one of two ways:
         #  1. a slice is recovered when some number of *durability* events
         #     happen
@@ -75,10 +76,9 @@ class ManualNormalEventHandler(object):
         self.availability_counts_for_recovery = \
             self.conf.availability_counts_for_recovery
 
-        self.available_status = [[1 for i in xrange(self.n)] for j in xrange(self.total_slices)]
-        self.durable_status = [[1 for i in xrange(self.n)] for j in xrange(self.total_slices)]
-        self.latent_defect = [None] * self.total_slices
-        self.known_latent_defect = [None] * self.total_slices
+        # for each block, 1 means Normal, 0 means Unavailable, -1 means Lost(caused by disk or node lost),
+        # -2 means Lost(caused by LSE)
+        self.status = [[UnitState.Normal for i in xrange(self.n)] for j in xrange(self.total_slices)]
 
         self.unavailable_slice_count = 0
         self.undurable_slice_count = 0
@@ -138,34 +138,30 @@ class ManualNormalEventHandler(object):
         # degraded slice statistic dict
         self.slices_degraded_durations = {}
 
-        self.cccccccccccccc = 0
-
     def _my_assert(self, expression):
         if not expression:
             raise Exception("My Assertion failed!")
         return True
 
     def durableCount(self, slice_index):
-        if isinstance(self.durable_status[slice_index], int):
-            return self.durable_status[slice_index]
+        if isinstance(self.status[slice_index], int):
+            return self.status[slice_index]
         else:
-            return self.durable_status[slice_index].count(1)
+            return self.status[slice_index].count(UnitState.Normal) + self.status[slice_index].count(UnitState.Crashed)
 
     def availableCount(self, slice_index):
-        if isinstance(self.available_status[slice_index], int):
-            return self.available_status[slice_index]
+        if isinstance(self.status[slice_index], int):
+            return self.status[slice_index]
         else:
-            return self.available_status[slice_index].count(1)
+            return self.status[slice_index].count(UnitState.Normal)
 
     def sliceRecovered(self, slice_index):
         if self.durableCount(slice_index) == self.n:
-            # - (1 if self.latent_defect[slice_index] else 0) == self.n:
             self.current_slice_degraded -= 1
         self.sliceRecoveredAvailability(slice_index)
 
     def sliceDegraded(self, slice_index):
         if self.durableCount(slice_index) == self.n:
-            # - (1 if self.latent_defect[slice_index] else 0) == self.n:
             self.current_slice_degraded += 1
         self.sliceDegradedAvailability(slice_index)
 
@@ -173,7 +169,7 @@ class ManualNormalEventHandler(object):
         if self.k == 1:
             # replication is not affected by this
             return
-        undurable = self.n - self.durableCount(slice_index) # + (1 if self.latent_defect[slice_index] else 0)
+        undurable = self.n - self.durableCount(slice_index)
         unavailable = self.n - self.availableCount(slice_index)
         if undurable == 0 and unavailable == 0:
             self.current_avail_slice_degraded -= 1
@@ -185,7 +181,7 @@ class ManualNormalEventHandler(object):
         if self.k == 1:
             # replication is not affected by this
             return
-        undurable = self.n - self.durableCount(slice_index) #  + (1 if self.latent_defect[slice_index] else 0)
+        undurable = self.n - self.durableCount(slice_index)
         unavailable = self.n - self.availableCount(slice_index)
         if undurable == 0 and unavailable == 0:
             self.current_avail_slice_degraded += 1
@@ -206,8 +202,7 @@ class ManualNormalEventHandler(object):
         if slice_unavailable_durations == []:
             slice_unavailable_durations.append([ts, self.end_time])
         else:
-            if not self.drs_handler.isRepairable(self.durable_status[slice_index]):
-               # (self.durableCount(slice_index) < self.k) or (self.durableCount(slice_index) == self.k and self.latent_defect[slice_index]):
+            if self.isLost(slice_index):
                 if slice_unavailable_durations[-1][1] is None:
                     slice_unavailable_durations[-1][1] = self.end_time
                 else:
@@ -216,34 +211,33 @@ class ManualNormalEventHandler(object):
                 slice_unavailable_durations[-1][1] = ts
         self.unavailable_durations[slice_index] = slice_unavailable_durations
 
-    def getCurrentState(self, slice_index):
-        available_state = self.available_status[slice_index]
-        durable_state = self.durable_status[slice_index]
-
-        if isinstance(available_state, int) or isinstance(durable_state, int):
-            return [0]*self.n
-
-        state = []
-        for i in xrange(self.n):
-            if available_state[i] and durable_state[i]:
-                state.append(1)
-            else:
-                state.append(0)
-        return state
-
-    def repairCost(self, slice_index, repaired_index):
-        rc = self.drs_handler.stateRepairCost(self.getCurrentState(slice_index), repaired_index)
+    def repair(self, slice_index, repaired_index):
+        rc = self.drs_handler.repair(self.status[slice_index], repaired_index)
         if rc < self.drs_handler.RC:
             self.total_optimal_repairs += 1
 
         return rc * self.conf.chunk_size
 
-    def parallelRepairCost(self, slice_index):
-        rc = self.drs_handler.stateParallRepairCost(self.getCurrentState(slice_index))
+    def parallelRepair(self, slice_index, only_lost=False):
+        rc = self.drs_handler.parallRepair(self.status[slice_index], only_lost)
         return rc * self.conf.chunk_size
 
     def isRepairable(self, slice_index):
-        return self.drs_handler.isRepairable(self.getCurrentState(slice_index))
+        return self.drs_handler.isRepairable(self.status[slice_index])
+
+    # corresponding slice is lost or not.
+    # True means lost, False means not lost
+    def isLost(self, slice_index):
+        state = []
+
+        if isinstance(self.status[slice_index], int):
+            return True
+        for s in self.status[slice_index]:
+            if s == UnitState.Normal or s == UnitState.Crashed:
+                state.append(UnitState.Normal)
+            else:
+                state.append(s)
+        return not self.drs_handler.isRepairable(state)
 
     def putBandwidthList(self, key, r):
         if key in self.bandwidth_list.keys():
@@ -256,7 +250,7 @@ class ManualNormalEventHandler(object):
     def addBandwidthStat(self, r):
         if self.max_bw < r.bandwidht():
             self.max_bw = r.bandwidht()
-            # logging.info("Max bw now is:"+ self.max_bw)
+            error_logger.info("Max bw now is:"+ str(self.max_bw))
 
         self.putBandwidthList(r.start, r)
         self.putBandwidthList(r.end, r)
@@ -398,28 +392,22 @@ class ManualNormalEventHandler(object):
                 return int(ceil(count + rate*(ts - s_time)))
 
     def handleEvent(self, e, queue):
-        # print "********event info********"
-        # print "event ID: ", e.event_id
-        # print "event type: ", e.getType()
-        # print "event unit: ", e.getUnit().getFullName()
-        # print "event Time: ", e.getTime()
-        # print "event next reovery time: ", e.next_recovery_time
+        """
+        print "********event info********"
+        print "event ID: ", e.event_id
+        print "event type: ", e.getType()
+        print "event unit: ", e.getUnit().toString()
+        print "event Time: ", e.getTime()
+        print "event next reovery time: ", e.next_recovery_time
+        """
         if e.getType() == Event.EventType.Failure:
             self.handleFailure(e.getUnit(), e.getTime(), e, queue)
         elif e.getType() == Event.EventType.Recovered:
             self.handleRecovery(e.getUnit(), e.getTime(), e)
-        elif e.getType() == Event.EventType.EagerRecoveryStart:
-            self.handleEagerRecoveryStart(e.getUnit(), e.getTime(), e, queue)
-        elif e.getType() == Event.EventType.EagerRecoveryInstallment:
-            self.handleEagerRecoveryInstallment(e.getUnit(), e.getTime(), e)
         elif e.getType() == Event.EventType.LatentDefect:
             self.handleLatentDefect(e.getUnit(), e.getTime(), e)
         elif e.getType() == Event.EventType.LatentRecovered:
             self.handleLatentRecovered(e.getUnit(), e.getTime(), e)
-        elif e.getType() == Event.EventType.ScrubStart:
-            self.handleScrubStart(e.getUnit(), e.getTime(), e)
-        elif e.getType() == Event.EventType.ScrubComplete:
-            self.handleScrubComplete(e.getUnit(), e.getTime(), e)
         else:
             raise Exception("Unknown event: " + e.getType())
 
@@ -448,24 +436,22 @@ class ManualNormalEventHandler(object):
 
                 disks = u.getChildren()
                 for child in disks:
-                    # if child.getMetadata().slice_count == 0:
-                    #     error_logger.error("lost machine failures")
-                    #     continue
-
                     slice_indexes = child.getChildren()
                     for slice_index in slice_indexes:
                         if slice_index >= current_total_slices:
                             continue
-                        if self.durable_status[slice_index] == self.lost_slice:
+                        if self.status[slice_index] == self.lost_slice:
                             continue
                         self.sliceDegradedAvailability(slice_index)
+
+                        repairable_before = self.isRepairable(slice_index)
                         index = self.slice_locations[slice_index].index(child)
-                        self.available_status[slice_index][index] = 0
+                        if self.status[slice_index][index] == UnitState.Normal:
+                            self.status[slice_index][index] = UnitState.Crashed
                         self._my_assert(self.availableCount(slice_index) >= 0)
 
-                        # undurable blocks also effect the repairable result.
-                        if not self.isRepairable(slice_index):
-                        # if not self.drs_handler.isRepairable(self.available_status[slice_index]):
+                        repairable_current = self.isRepairable(slice_index)
+                        if repairable_before and not repairable_current:
                             self.unavailable_slice_count += 1
                             self.startUnavailable(slice_index, time)
 
@@ -481,58 +467,40 @@ class ManualNormalEventHandler(object):
             for slice_index in slice_indexes:
                 if slice_index >= current_total_slices:
                     continue
-                if self.durableCount(slice_index) == self.lost_slice:
-                    continue
-                if (u.getMetadata().nonexistent_slices is not None) and \
-                   (slice_index in u.getMetadata().nonexistent_slices):
+                if self.status[slice_index] == self.lost_slice:
                     continue
 
                 self.sliceDegraded(slice_index)
-                index = self.slice_locations[slice_index].index(u)
-                self.durable_status[slice_index][index] = 0
+                repairable_before = self.isRepairable(slice_index)
 
-                if u.getMetadata().nonexistent_slices is None:
-                    u.getMetadata().nonexistent_slices = set()
-                u.getMetadata().nonexistent_slices.add(slice_index)
+                index = self.slice_locations[slice_index].index(u)
+                if self.status[slice_index][index] == UnitState.Corrupted:
+                    continue
+                self.status[slice_index][index] = UnitState.Corrupted
 
                 self._my_assert(self.durableCount(slice_index) >= 0)
 
-                if (u.getMetadata().defective_slices is not None) and \
-                   slice_index in u.getMetadata().defective_slices:
-                    self.latent_defect[slice_index] = False
-                if (u.getMetadata().known_defective_slices is not None) and \
-                   slice_index in u.getMetadata().known_defective_slices:
-                    self.known_latent_defect[slice_index] = False
+                repairable_current = self.isRepairable(slice_index)
+                # exclude the disk lost caused by node lost, it has already considered in node lost
+                if e.info != self.inherit_lost and repairable_before and not repairable_current:
+                    self.unavailable_slice_count += 1
+                    self.startUnavailable(slice_index, time)
 
-                if not self.drs_handler.isRepairable(self.durable_status[slice_index]):
+                if self.isLost(slice_index):
                     info_logger.info(
                         "time: " + str(time) + " slice:" + str(slice_index) +
                         " durCount:" + str(self.durableCount(slice_index)) +
-                        " latDefect:" + str(self.latent_defect[slice_index]) +
                         " due to disk " + str(u.getID()))
-                    self.durable_status[slice_index] = self.lost_slice
+                    self.status[slice_index] = self.lost_slice
                     self.undurable_slice_count += 1
                     self.endUnavailable(slice_index, time)
                     continue
 
-                if self.durableCount(slice_index) == self.k and \
-                   self.latent_defect[slice_index]:
-                    info_logger.info(
-                        "time: " + str(time) + " slice:" + str(slice_index) +
-                        " durCount:" + str(self.durableCount(slice_index))
-                        + " latDefect:" + str(self.latent_defect[slice_index])
-                        + " due to latent error and disk " + str(u.getID()))
-                    self.durable_status[slice_index] = self.lost_slice
-                    self.undurable_slice_count += 1
-                    self.endUnavailable(slice_index, time)
-
                 # is this slice one that needs recovering? if so, how much
                 # data to recover?
-                if self.durable_status[slice_index] != self.lost_slice:
+                if self.status[slice_index] != self.lost_slice:
                     threshold_crossed = False
                     num_undurable = self.n - self.durableCount(slice_index)
-                    if self.known_latent_defect[slice_index]:
-                        num_undurable += 1
                     if num_undurable >= self.n - self.recovery_threshold:
                         threshold_crossed = True
 
@@ -544,8 +512,8 @@ class ManualNormalEventHandler(object):
                            self.recovery_threshold:
                             threshold_crossed = True
                     if threshold_crossed:
-                        projected_bandwidth_need += \
-                            self.parallelRepairCost(slice_index)
+                        projected_bandwidth_need += self.k - 1 + \
+                            (self.n - self.status[slice_index].count(UnitState.Normal))
 
             # current recovery bandwidth goes up by projected bandwidth need
             projected_bandwidth_need /= (e.next_recovery_time -
@@ -557,8 +525,6 @@ class ManualNormalEventHandler(object):
             if self.current_recovery_bandwidth > self.max_recovery_bandwidth:
                 self.max_recovery_bandwidth = self.current_recovery_bandwidth
             self._my_assert(self.current_recovery_bandwidth >= 0)
-            u.getMetadata().defective_slice = None
-            u.getMetadata().known_defective_slices = None
 
             self.slices_degraded_list.append((e.getTime(),
                                               self.current_slice_degraded))
@@ -586,16 +552,19 @@ class ManualNormalEventHandler(object):
                     for slice_index in slice_indexes:
                         if slice_index >= current_total_slices:
                             continue
-                        if self.durableCount(slice_index) == self.lost_slice:
+                        if self.status[slice_index] == self.lost_slice:
                             continue
 
                         if self.availableCount(slice_index) < self.n:
-                            former_available = self.isRepairable(slice_index)
+                            repairable_before = self.isRepairable(slice_index)
+
                             index = self.slice_locations[slice_index].index(child)
-                            self.available_status[slice_index][index] = 1
+                            if self.status[slice_index][index] == UnitState.Crashed:
+                                self.status[slice_index][index] = UnitState.Normal
                             self.sliceRecoveredAvailability(slice_index)
-                            latter_available = self.isRepairable(slice_index)
-                            if (not former_available) and latter_available:
+
+                            repairable_current = self.isRepairable(slice_index)
+                            if not repairable_before and repairable_current:
                                 self.endUnavailable(slice_index, time)
                         elif e.info == 1:  # temp & short failure
                             self.anomalous_available_count += 1
@@ -616,15 +585,15 @@ class ManualNormalEventHandler(object):
             for slice_index in slice_indexes:
                 if slice_index >= current_total_slices:
                     continue
-                if self.durableCount(slice_index) == self.lost_slice:
+                if self.status[slice_index] == self.lost_slice:
+                    continue
+                if not self.isRepairable(slice_index):
                     continue
 
                 threshold_crossed = False
                 actual_threshold = self.recovery_threshold
 
                 num_undurable = self.n - self.durableCount(slice_index)
-                if self.latent_defect[slice_index] and (not self.known_latent_defect[slice_index]):
-                    num_undurable -= 1
                 if num_undurable >= self.n - actual_threshold:
                     threshold_crossed = True
 
@@ -634,27 +603,23 @@ class ManualNormalEventHandler(object):
                         threshold_crossed = True
 
                 if threshold_crossed:
-                    if (u.getMetadata().nonexistent_slices is not None) \
-                       and (slice_index in u.getMetadata().nonexistent_slices):
-                        u.getMetadata().nonexistent_slices.remove(slice_index)
+                    index = self.slice_locations[slice_index].index(u)
+                    if self.status[slice_index][index] == UnitState.Corrupted or self.status[slice_index][index] == UnitState.LatentError:
+                        repairable_before = self.isRepairable(slice_index)
 
-                        former_available = self.isRepairable(slice_index)
-                        index = self.slice_locations[slice_index].index(u)
-
-                        rc = self.repairCost(slice_index, index)
+                        if self.parallel_repair:
+                            rc = self.parallelRepair(slice_index)
+                        else:
+                            rc = self.repair(slice_index, index)
+                        if slice_index in u.getSlicesHitByLSE():
+                            u.slices_hit_by_LSE.remove(slice_index)
                         self.total_repairs += 1
-                        self.durable_status[slice_index][index] = 1
                         transfer_required += rc
                         self.total_repair_transfers += rc
-                        latter_available = self.isRepairable(slice_index)
-                        if (not former_available) and latter_available:
-                            # I think this place have to change, the end unavailable time should add the block recovery time?
-                            self.endUnavailable(slice_index, time)
 
-                    # after disk recovery, all sector errors are disappeared
-                    if (u.getMetadata().defective_slices is not None) \
-                       and (slice_index in u.getMetadata().defective_slices):
-                        u.getMetadata().defective_slices.remove(slice_index)
+                        repairable_current = self.isRepairable(slice_index)
+                        if not repairable_before and repairable_current:
+                            self.endUnavailable(slice_index, time)
 
                     # must come after all counters are updated
                     self.sliceRecovered(slice_index)
@@ -681,45 +646,40 @@ class ManualNormalEventHandler(object):
             if slice_index >= current_total_slices:
                 return
 
-            if self.durableCount(slice_index) == self.lost_slice:
-                self.total_skipped_latent += 1
-                return
-            if (u.getMetadata().nonexistent_slices is not None) and \
-               (slice_index in u.getMetadata().nonexistent_slices):
+            if self.status[slice_index] == self.lost_slice:
                 self.total_skipped_latent += 1
                 return
 
-            # A latent defect cannot hit replicas of the same slice multiple
-            # times.
-            if self.latent_defect[slice_index]:
+            repairable_before = self.isRepairable(slice_index)
+
+            index = self.slice_locations[slice_index].index(u)
+            # A LSE cannot hit lost blocks or a same block multiple times
+            if self.status[slice_index][index] == UnitState.Corrupted or self.status[slice_index][index] == UnitState.LatentError:
                 self.total_skipped_latent += 1
                 return
 
             self._my_assert(self.durableCount(slice_index) >= 0)
             self.sliceDegraded(slice_index)
 
-            durable_count_before = self.durableCount(slice_index)
-            index = self.slice_locations[slice_index].index(u)
-            self.durable_status[slice_index][index] = 0
-            self.latent_defect[slice_index] = True
+            self.status[slice_index][index] = UnitState.LatentError
+            u.slices_hit_by_LSE.append(slice_index)
             self.total_latent_failures += 1
 
-            # Maybe this if can be deleted.
-            if u.getMetadata().defective_slices is None:
-                u.getMetadata().defective_slices = set()
-            u.getMetadata().defective_slices.add(slice_index)
+            repairable_current = self.isRepairable(slice_index)
+            if repairable_before and not repairable_current:
+                self.unavailable_slice_count += 1
+                self.startUnavailable(slice_index, time)
 
-            if durable_count_before == self.k:
+            if self.isLost(slice_index):
                 info_logger.info(
                     str(time) + " slice: " + str(slice_index) +
-                    " durCount: " + str(durable_count_before) +
+                    " durCount: " + str(self.durableCount(slice_index)) +
                     " latDefect " + str(True) +
                     "  due to ===latent=== error " + " on disk " +
                     str(u.getID()))
                 self.undurable_slice_count += 1
                 self.endUnavailable(slice_index, time)
-                self.durable_status[slice_index] = self.lost_slice
-                u.getMetadata().defective_slices.remove(slice_index)
+                self.status[slice_index] = self.lost_slice
         else:
             raise Exception("Latent defect should only happen for disk")
 
@@ -733,33 +693,33 @@ class ManualNormalEventHandler(object):
         current_total_slices = self.calCurrentTotalSlices(time)
         if isinstance(u, Disk):
             self.total_scrubs += 1
-            if u.getMetadata().defective_slices is None:
-                return
-            u.getMetadata().known_defective_slices = \
-                deepcopy(u.getMetadata().defective_slices)
-            for slice_index in u.getMetadata().known_defective_slices:
-                self.known_latent_defect[slice_index] = True
-            if u.getMetadata().known_defective_slices is None:
-                return
-            for slice_index in u.getMetadata().known_defective_slices:
+
+            slice_indexes = u.getSlicesHitByLSE()
+            for slice_index in slice_indexes:
                 if slice_index >= current_total_slices:
                     continue
-                self.total_scrub_repairs += 1
-                self.latent_defect[slice_index] = False
-                index = self.slice_locations[slice_index].index(u)
-                if isinstance(self.durable_status[slice_index], int):
+                if self.status[slice_index] == self.lost_slice:
                     continue
-                else:
-                    rc = self.repairCost(slice_index, index)
-                    self.total_repairs += 1
-                    self.durable_status[slice_index][index] = 1
-                    self.known_latent_defect[slice_index] = False
-                    transfer_required += rc
-                    self.total_repair_transfers += rc
-                    self.sliceRecovered(slice_index)
 
-            u.getMetadata().defective_slices = None
-            u.getMetadata().known_defective_slices = None
+                repairable_before = self.isRepairable(slice_index)
+
+                index = self.slice_locations[slice_index].index(u)
+                if self.status[slice_index][index] != UnitState.LatentError:
+                    continue
+                self.total_scrub_repairs += 1
+                if self.parallel_repair:
+                    rc = self.parallelRepair(slice_index)
+                else:
+                    rc = self.repair(slice_index, index)
+                u.slices_hit_by_LSE.remove(slice_index)
+                self.total_repairs += 1
+                transfer_required += rc
+                self.total_repair_transfers += rc
+                self.sliceRecovered(slice_index)
+
+                repairable_current = self.isRepairable(slice_index)
+                if not repairable_before and repairable_current:
+                    self.endUnavailable(slice_index, time)
         else:
             raise Exception("Latent Recovered should only happen for disk")
         self.slices_degraded_list.append(
@@ -770,12 +730,6 @@ class ManualNormalEventHandler(object):
             Recovery(u.getLastScrubStart(), e.getTime(), transfer_required))
 
     def end(self):
-        # all_disks = []
-        # self.distributer.getAllDisks(self.distributer.getRoot(), all_disks)
-        # for rack_disks in all_disks:
-        #     for u in rack_disks:
-        #         u.meta = Metadata()
-
         ret = Result()
 
         # data loss probability and data unvailable probability
@@ -828,15 +782,14 @@ class ManualNormalEventHandler(object):
 
         return ret
 
-
+"""
 class AutoNoramlEventHandler(object):
-    """
-    When system detects and identifies the permanent data loss, system will execute data repair and
-    put the repaired data on a new chosen disk.
+    # When system detects and identifies the permanent data loss, system will execute data repair and
+    # put the repaired data on a new chosen disk.
 
-    Repair Time = Identification Time + Data Transferring Time
-    """
+    # Repair Time = Identification Time + Data Transferring Time
     pass
+"""
 
 
 if __name__ == "__main__":

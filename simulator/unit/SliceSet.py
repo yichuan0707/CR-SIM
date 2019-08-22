@@ -5,7 +5,7 @@ class SliceSet(Unit):
 
     def __init__(self, name, slice_set):
         super(SliceSet, self).__init__(name, None, None)
-        self.slice_set = slice_set
+        self.slices = slice_set
         self.original_failure_time = 0
 
     def getOriginalFailureTime(self):
@@ -13,3 +13,9 @@ class SliceSet(Unit):
 
     def setOriginalFailureTime(self, original_failure_time):
         self.original_failure_time = original_failure_time
+
+    def removeSlice(self, slice_index):
+        self.slices.remove(slice_index)
+
+    def addSlice(self, slice_index):
+        self.slices.append(slice_index)

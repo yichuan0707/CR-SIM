@@ -1,3 +1,4 @@
+from simulator.UnitState import UnitState
 from simulator.drs.base import Base
 
 
@@ -55,7 +56,7 @@ class LRC(Base):
         if len(state) != self.n:
             raise Exception("State Length Error!")
 
-        avails = state.count(1)
+        avails = state.count(UnitState.Normal)
 
         # all blocks is available, don't neeed repair
         if avails == self.n:
@@ -73,16 +74,17 @@ class LRC(Base):
         avail_equ = 0
         loss_amount = 0
         for group in local_groups:
-            if group.count(0) <= self.m0:
-                global_group += [1 for item in xrange(b)]
+            group_loss_amount = len(group) - group.count(UnitState.Normal)
+            if group_loss_amount <= self.m0:
+                global_group += [UnitState.Normal for item in xrange(b)]
             else:
                 avail_equ += self.m0
-                loss_amount += group.count(0)
+                loss_amount += group_loss_amount
                 global_group += group[:b]
 
         global_parity = state[-self.m1:]
         avail_equ += self.m1
-        loss_amount += global_parity.count(0)
+        loss_amount += self.m1 - global_parity.count(UnitState.Normal)
         global_group += global_parity
         # Available equations are no less than loss blocks means repairable.
         if avail_equ < loss_amount:
@@ -94,47 +96,49 @@ class LRC(Base):
     # Maybe we need another function, return the state after repair?
     # Tentatively, we return a tuple (repair_cost, state_after_repair)in
     #  this function, this is different with MDS codes.
-    def stateRepairCost(self, state, index=None):
+    def repair(self, state, index):
         if not self.isRepairable(state):
-            return -1
-
-        if state[index] != 0:
-            raise Exception("Corresponding index is not lost.")
+            raise Exception("state can not be repaired!")
+        if state[index] == UnitState.Normal:
+            raise Exception("index:" + str(index) + " in " +str(state) + " is normal state")
 
         optimal_flag = False
         b = self.k/self.ll
-        index_groups = [[] for x in xrange(self.ll)]
+        if 0 <= index < b or self.k <= index < self.k+self.m0:
+            group = state[0:b] + state[self.k:self.k+self.m0]
+        elif b <= index < 2*b or self.k+self.m0 <= index < self.k+2*self.m0:
+            group = state[b:2*b] + state[self.k+self.m0:self.k+2*self.m0]
+        else:
+            group = []
 
-        for i in xrange(self.k):
-            g_id = i/b
-            index_groups[g_id].append(i)
-
-        for j in xrange(self.k, self.n-self.m1):
-            g_id = (j-self.k)/self.m0
-            index_groups[g_id].append(j)
-
-        for group in index_groups:
-            if index in group:
-                group_state = [state[i] for i in group]
-                if group_state.count(0) <= 1:
-                    optimal_flag = True
+        if group.count(UnitState.Normal) >= b:
+            optimal_flag = True
+        state[index] = UnitState.Normal
         if optimal_flag:
             return self.ORC
         else:
             return self.RC
 
-    def stateParallRepairCost(self, state):
+    def parallRepair(self, state, only_lost=False):
         if not self.isRepairable(state):
-            return -1
+            raise Exception("state can not be repaired!")
 
-        fail = state.count(0)
-        if fail == 1:
-            index = state.index(0)
-            if index < self.k + self.ll:
-                return self.ORC
-            else:
-                return self.RC
-        return self.RC + fail - 1
+        repair_index = []
+        for i in xrange(self.n):
+            if state[i] == UnitState.Corrupted or state[i] == UnitState.LatentError:
+                state[i] = UnitState.Normal
+                repair_index.append(i)
+            if not only_lost and state[i] == UnitState.Crashed:
+                state[i] = UnitState.Normal
+                repair_index.append(i)
+
+        repair_amount = len(repair_index)
+        if repair_amount == 0:
+            return 0
+        elif repair_amount == 1 and repair_index[0] < self.n-self.m1:
+            return self.ORC
+        else:
+            return self.RC + repair_amount - 1
 
 
 if __name__ == "__main__":
@@ -144,9 +148,10 @@ if __name__ == "__main__":
     #print lrc.SSC
     #print lrc.ORC
     #print lrc.RC
-
-    state = [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
-    state1 = [1, 1, 1, 1, 1, 0, 1, 0, 0, 1]
-    print lrc.isRepairable(state1)
-    print lrc.stateRepairCost(state1, 7)
-    # print lrc.stateParallRepairCost(state1)
+    state = [UnitState.Normal]*10
+    state[3] = UnitState.Crashed
+    state[4] = UnitState.Corrupted
+    state[5] = UnitState.LatentError
+    print lrc.isRepairable(state)
+    print lrc.repair(state, 4)
+    print lrc.parallRepair(state, True)

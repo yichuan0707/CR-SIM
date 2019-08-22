@@ -17,19 +17,42 @@ from simulator.XMLParser import XMLParser
 from simulator.unit.Rack import Rack
 from simulator.unit.Machine import Machine
 from simulator.unit.Disk import Disk
-from simulator.dataDistribute.Random import RandomDistributeSSS
-from simulator.eventHandler.NormalEventHandler import ManualNormalEventHandler
+
+from simulator.eventHandler.EventHandler import EventHandler
+from simulator.eventHandler.RAFIEventHandler import RAFIEventHandler
+from simulator.dataDistribute.SSSDistribute import SSSDistribute, HierSSSDistribute
+from simulator.dataDistribute.PSSDistribute import PSSDistribute, HierPSSDistribute
+from simulator.dataDistribute.COPYSETDistribute import COPYSETDistribute, HierCOPYSETDistribute
 
 DEFAULT = r"/root/CR-SIM/conf/"
 RESULT = r"/root/CR-SIM/log/result-"
 
+def returnDistributer(data_placement, hier):
+    if data_placement == "sss":
+        if hier:
+            return HierSSSDistribute
+        else:
+            return SSSDistribute
+    elif data_placement == "pss":
+        if hier:
+            return HierPSSDistribute
+        else:
+            return PSSDistribute
+    elif data_placement == "copyset":
+        if hier:
+            return HierCOPYSETDistribute
+        else:
+            return COPYSETDistribute
+    else:
+        raise Exception("Incorrect data placement")
+
 
 class Simulation(object):
 
-    def __init__(self, conf_path, distributer_class=RandomDistributeSSS, event_handler=ManualNormalEventHandler):
+    def __init__(self, conf_path):
         self.conf_path = conf_path
-        self.distributer_class = distributer_class
-        self.event_handler = event_handler
+        # self.distributer_class = distributer_class
+        # self.event_handler = event_handler
 
         self.scaling_intervals = []
         self.iteration_times = 1
@@ -128,6 +151,8 @@ class Simulation(object):
                     for component in dl_components:
                         component.addFailureInterval(dl_interval)
                 else:
+                    # here, unavailable compoent should be excluded.
+                    # But, a little complicate to implement.
                     dl_components = self._failedComponents(cf_info[3], dl_interval)
 
                 for component in dl_components:
@@ -177,9 +202,16 @@ class Simulation(object):
     def run(self):
         conf = Configuration(self.conf_path)
         xml = XMLParser(conf)
-        self.distributer = self.distributer_class(xml)
+        distributer_class = returnDistributer(conf.data_placement, conf.hierarchical)
+        self.distributer = distributer_class(xml)
         self.conf = self.distributer.returnConf()
+
+        if self.conf.rafi_recovery:
+            self.event_handler = RAFIEventHandler
+        else:
+            self.event_handler = EventHandler
         self.distributer.start()
+        # self.distributer.printGroupsToFile()
 
         if self.conf.system_upgrade:
             for info in self.conf.system_upgrade_infos:
@@ -195,6 +227,7 @@ class Simulation(object):
             for info in self.conf.system_scaling_infos:
                 self.addSystemScaling(info)
 
+        info_logger.info("disk usage is: " + str(self.distributer.diskUsage()*100) + "%\n")
         self.distributer.getRoot().printAll()
 
         events_handled = 0
@@ -229,7 +262,8 @@ class Simulation(object):
 
         for i in xrange(num_iterations):
             result = self.run()
-            contents.append([result.data_loss_prob, result.unavailable_prob, result.total_repair_transfers])
+            contents.append([result.data_loss_prob, result.unavailable_prob, result.total_repair_transfers] +
+                            list(result.undurable_count_details))
 
         res_file_path = RESULT + self.ts + ".csv"
         self.writeToCSV(res_file_path, contents)

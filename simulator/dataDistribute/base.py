@@ -1,5 +1,7 @@
 from time import strftime, time
+
 from simulator.Configuration import Configuration
+from simulator.Log import error_logger
 from simulator.XMLParser import XMLParser
 from simulator.unit.Rack import Rack
 
@@ -22,6 +24,8 @@ class DataDistribute(object):
         self.slice_infos = {}
 
         self.total_slices = 0
+        # groups of pss and copyset data placement
+        self.groups = None
         self.conf.printAll()
 
     def _my_assert(self, expression):
@@ -41,6 +45,9 @@ class DataDistribute(object):
     def getRoot(self):
         return self.root
 
+    def getGroups(self):
+        return self.groups
+
     def returnTotalSliceCount(self):
         return self.total_slices
 
@@ -53,8 +60,8 @@ class DataDistribute(object):
     def returnDisksPerMachine(self):
         return len(self.root.getChildren()[0].getChildren()[0].getChildren()[0].getChildren())
 
-    def returnChunksPerDisk(self):
-        return self.root.getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].chunks_per_disk
+    def returnDiskCapacity(self):
+        return self.root.getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getDiskCapacity()
 
     def returnTotalDiskCount(self):
         rack_count = self.returnRackCount()
@@ -62,9 +69,13 @@ class DataDistribute(object):
         disks_per_machine = self.returnDisksPerMachine()
         return rack_count * machines_per_rack * disks_per_machine
 
-    # scaling gives additional slices, not include in total_active_storage
-    # def returnSliceCount(self):
-    #    return self.conf.total_active_storage/(self.conf.block_size * self.n)
+    def diskUsage(self):
+        if self.total_slices == 0:
+            error_logger.info("slices have not distributed, disks are empty!")
+            return 0
+        disk_cap_in_MBs = self.returnDiskCapacity() * pow(10,12)/pow(2,20)
+        system_cap = self.returnTotalDiskCount() * disk_cap_in_MBs
+        return self.returnTotalSliceCount()*self.n*self.conf.chunk_size/system_cap
 
     def distributeSlices(self, root, total_slices):
         pass
@@ -79,7 +90,7 @@ class DataDistribute(object):
         """
         pass
 
-    def distributeSliceToDisk(self):
+    def distributeSliceToDisk(self, slice_index, disks, available_racks, seperate_racks):
         """
         Distribute one slice to one disk.
         """
@@ -89,7 +100,6 @@ class DataDistribute(object):
         self.distributeSlices(self.root, self.conf.total_slices)
 
     def end(self):
-        print "Results"
         pass
 
     def getAllRacks(self):
@@ -134,6 +144,9 @@ class DataDistribute(object):
                     info += d.toString() + ", "
                 info += "\n"
                 fp.write(info)
+
+    def printGroupsToFile(self, file_path=None):
+        pass
 
 
 class DataDistributeDynamic(object):

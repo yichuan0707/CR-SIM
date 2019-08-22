@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from simulator.Event import Event
+from simulator.unit.SliceSet import SliceSet
 
 
 class EventQueue(object):
@@ -13,10 +14,24 @@ class EventQueue(object):
             event_list.append(e)
             EventQueue.events.setdefault(e.getTime(), event_list)
 
+    def updateEvent(self, ts, e, slice_index):
+        if isinstance(e.getUnit(), SliceSet):
+            index = EventQueue.events.get(ts).index(e)
+            EventQueue.event.get(ts)[index].getUnit().remove(slice_index)
+        else:
+            raise Exception("lost unit is not SliceSet.")
+
     def addEventQueue(self, queue):
         all_events = queue.getAllEvents()
         for e in all_events:
             self.addEvent(e)
+
+    def remove(self, e):
+        ts = e.getTime()
+        events = EventQueue.events.get(ts)
+        events.remove(e)
+        if len(events) == 0:
+            EventQueue.events.pop(ts)
 
     def removeFirst(self):
         if EventQueue.events.keys() == []:

@@ -1,4 +1,6 @@
 from copy import deepcopy
+
+from simulator.UnitState import UnitState
 from simulator.drs.LRC import LRC
 
 
@@ -16,51 +18,61 @@ class XORBAS(LRC):
             return False
         parity_group = state[-(self.m1 + self.ll):]
         new_state = deepcopy(state)
-        if parity_group.count(0) == 1:
-            parity_recovery_id = parity_group.index(0)
-            new_state[self.k + parity_recovery_id] += 1
+        if parity_group.count(UnitState.Normal) == len(parity_group) - 1:
+            for i, s in enumerate(parity_group):
+                if s != UnitState.Normal:
+                    new_state[self.k + i] = UnitState.Normal
+                    break
         return super(XORBAS, self).isRepairable(new_state)
 
-    def stateRepairCost(self, state, index=None):
+    def repair(self, state, index):
         if not self.isRepairable(state):
-            return -1
-
-        if state[index] != 0:
-            raise Exception("Corresponding index is not lost.")
+            raise Exception("state can not be repaired!")
+        if state[index] == UnitState.Normal:
+            raise Exception("index:" + str(index) + " in " +str(state) + " is normal state")
 
         optimal_flag = False
         b = self.k/self.ll
-        index_groups = [[] for x in xrange(self.ll)]
+        if 0 <= index < b or self.k <= index < self.k+self.m0:
+            group = state[0:b] + state[self.k:self.k+self.m0]
+        elif b <= index < 2*b or self.k+self.m0 <= index < self.k+2*self.m0:
+            group = state[b:2*b] + state[self.k+self.m0:self.k+2*self.m0]
+        else:
+            group = []
 
-        for i in xrange(self.k):
-            g_id = i/b
-            index_groups[g_id].append(i)
+        parity_group = state[self.k:]
 
-        for j in xrange(self.k, self.n-self.m1):
-            g_id = (j-self.k)/self.m0
-            index_groups[g_id].append(j)
+        if group.count(UnitState.Normal) >= b:
+            optimal_flag = True
+        if index >= self.k and len(parity_group) - parity_group.count(UnitState.Normal) == 1:
+            optimal_flag = True
 
-        index_groups.append([i for i in xrange(self.k, self.n)])
-
-        for group in index_groups:
-            if index in group:
-                group_state = [state[i] for i in group]
-                if group_state.count(0) <= 1:
-                    optimal_flag = True
+        state[index] = UnitState.Normal
         if optimal_flag:
             return self.ORC
         else:
             return self.RC
 
-    def stateParallRepairCost(self, state):
+    def parallRepair(self, state, only_lost=False):
         if not self.isRepairable(state):
-            return -1
+            raise Exception("state can not be repaired!")
 
-        fail = state.count(0)
-        if fail == 1:
+        repair_index = []
+        for i in xrange(self.n):
+            if state[i] == UnitState.Corrupted or state[i] == UnitState.LatentError:
+                state[i] = UnitState.Normal
+                repair_index.append(i)
+            if not only_lost and state[i] == UnitState.Crashed:
+                state[i] = UnitState.Normal
+                repair_index.append(i)
+
+        repair_amount = len(repair_index)
+        if repair_amount == 0:
+            return 0
+        elif repair_amount == 1:
             return self.ORC
         else:
-            return self.RC + fail - 1
+            return self.RC + repair_amount - 1
 
 
 if __name__ == "__main__":
@@ -71,7 +83,11 @@ if __name__ == "__main__":
     # print lrc.ORC
     # print lrc.RC
 
-    state = [1, 1, 0, 1, 1, 1, 1, 1, 0, 1]
+    state = [UnitState.Normal]*10
+    state[3] = UnitState.Crashed
+    state[4] = UnitState.Corrupted
+    state[5] = UnitState.LatentError
+    state[7] = UnitState.Corrupted
     print lrc.isRepairable(state)
-    print "single repair cost is:", lrc.stateRepairCost(state, 8)
-    print lrc.stateParallRepairCost(state)
+    print "single repair cost is:", lrc.repair(state, 7)
+    print lrc.parallRepair(state, False)

@@ -1,7 +1,6 @@
 from abc import ABCMeta
 from copy import deepcopy
 
-from simulator.Metadata import Metadata
 from simulator.Event import Event
 
 
@@ -15,7 +14,6 @@ class Unit:
         self.name = name
         self.failure_generator = None
         self.recovery_generator = None
-        self.meta = Metadata()
 
         self.id = Unit.unit_count
         self.start_time = 0
@@ -25,6 +23,9 @@ class Unit:
         self.failure_intervals = []
 
         Unit.unit_count += 1
+
+    def __eq__(self, other):
+        return self.id == other.id
 
     def setStartTime(self, ts):
         self.start_time = ts
@@ -78,9 +79,6 @@ class Unit:
     def getParent(self):
         return self.parent
 
-    def getMetadata(self):
-        return self.meta
-
     def getID(self):
         return self.id
 
@@ -97,6 +95,7 @@ class Unit:
 
     def addCorrelatedFailures(self, result_events, failure_time, recovery_time, lost_flag):
         fail_event = Event(Event.EventType.Failure, failure_time, self)
+        fail_event.next_recovery_time = recovery_time
         recovery_event = Event(Event.EventType.Recovered, recovery_time, self)
         result_events.addEvent(fail_event)
         result_events.addEvent(recovery_event)

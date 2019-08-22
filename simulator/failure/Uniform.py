@@ -19,4 +19,4 @@ class Uniform(EventGenerator):
         return 0
 
     def generateNextEvent(self, current_time):
-        return current_time + float(self.frequency*randint()*1000)/1000.0
+        return current_time + float(randint(self.frequency*1000))/1000.0

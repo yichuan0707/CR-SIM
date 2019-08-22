@@ -11,10 +11,11 @@ class Event(object):
         EagerRecoveryStart = 3
         EagerRecoveryInstallment = 4
         LatentDefect = 5
-        ScrubStart = 6
-        ScrubComplete = 7
-        LatentRecovered = 8
-        End = 9
+        LatentRecovered = 6
+        RAFIRecovered = 7
+        # ScrubStart = 6
+        # ScrubComplete = 7
+        End = 8
 
     def __init__(self, e_type, time, unit, info=-100, ignore=False,
                  next_recovery_time=0):

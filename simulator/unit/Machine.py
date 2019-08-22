@@ -1,8 +1,9 @@
-from random import random
+from random import random, uniform
 
 from simulator.Unit import Unit
 from simulator.Event import Event
 from simulator.failure.Trace import Trace
+from simulator.Configuration import Configuration
 
 
 class Machine(Unit):
@@ -27,14 +28,31 @@ class Machine(Unit):
             self.eager_recovery_enabled = bool(parameters.get(
                 "eager_recovery_enabled"))
 
+        conf = Configuration()
+        self.machine_repair_time = conf.node_repair_time
+
     def getFailureGenerator(self):
         return self.failure_generator
 
     def addCorrelatedFailures(self, result_events, failure_time, recovery_time, lost_flag):
-        super(Machine, self).addCorrelatedFailures(result_events, failure_time, recovery_time, lost_flag)
         if lost_flag:
-            for u in self.getChildren():
-                u.addCorrelatedFailures(result_events, failure_time, recovery_time, lost_flag)
+            failure_type = 3
+        else:
+            if recovery_time - failure_time <= self.fail_timeout:
+                failure_type = 1
+            else:
+                failure_type = 2
+
+        fail_event = Event(Event.EventType.Failure, failure_time, self, failure_type)
+        fail_event.next_recovery_time = recovery_time
+        recovery_event = Event(Event.EventType.Recovered, recovery_time, self, failure_type)
+        result_events.addEvent(fail_event)
+        result_events.addEvent(recovery_event)
+
+        if [failure_time, recovery_time, lost_flag] in self.failure_intervals:
+            self.failure_intervals.remove([failure_time, recovery_time, lost_flag])
+
+        return fail_event
 
     def generateEvents(self, result_events, start_time, end_time, reset):
         if start_time < self.start_time:
@@ -113,13 +131,14 @@ class Machine(Unit):
                     # failure type: tempAndShort=1, tempAndLong=2, permanent=3
                     failure_type = 3
 
+                    """
                     # generate disk failures
                     max_recovery_time = recovery_time
                     for u in self.children:
                         # ensure machine fails before disk
                         disk_fail_time = failure_time + 1E-5
                         disk_fail_event = Event(Event.EventType.Failure,
-                                                disk_fail_time, u)
+                                                disk_fail_time, u, -200)
                         result_events.addEvent(disk_fail_event)
                         disk_recovery_time = u.generateRecoveryEvent(
                             result_events, disk_fail_time, end_time-(1E-5))
@@ -127,7 +146,12 @@ class Machine(Unit):
                         # machine recovery must coincide with last disk recovery
                         if disk_recovery_time > max_recovery_time:
                             max_recovery_time = disk_recovery_time
-                    recovery_time = max_recovery_time + (1E-5)
+                    """
+                    # detection time, identification time, data transferring time, we can not
+                    # obtain queue time here.
+                    detection_time = uniform(0, self.fail_timeout)
+                    recovery_time = failure_time + detection_time + self.fail_timeout + \
+                        self.machine_repair_time
                 else:
                     if recovery_time - failure_time <= self.fail_timeout:
                         # transient failure and come back very soon
@@ -157,8 +181,9 @@ class Machine(Unit):
                 result_events.addEvent(Event(Event.EventType.Recovered,
                                              recovery_time, self, True))
             else:
-                result_events.addEvent(Event(Event.EventType.Failure,
-                                             failure_time, self, failure_type))
+                fail_event = Event(Event.EventType.Failure, failure_time, self, failure_type)
+                fail_event.next_recovery_time = recovery_time
+                result_events.addEvent(fail_event)
                 result_events.addEvent(Event(Event.EventType.Recovered,
                                              recovery_time, self,
                                              failure_type))
@@ -167,7 +192,6 @@ class Machine(Unit):
             last_recover_time = current_time
             if current_time >= end_time - (1E-5):
                 break
-
 
     # def toString(self):
     #     full_name = super(Machine, self).toString()

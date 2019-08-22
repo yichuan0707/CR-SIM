@@ -39,8 +39,6 @@ class DiskWithScrubbing(Disk):
             raise Exception("end_time = Inf or NAN")
 
         current_time = start_time
-        # if self.children != [] or len(self.children):
-        #    raise Exception("Disk should not have any children")
 
         if start_time == 0:
             self.last_recovery_time = 0
@@ -90,7 +88,6 @@ class DiskWithScrubbing(Disk):
                                                        failure_time, end_time)
             if recovery_time < 0:
                 raise Exception("recovery time is negative")
-
 
             for [fail_time, recover_time, _bool] in self.failure_intervals:
                 if recovery_time < fail_time:
@@ -145,6 +142,8 @@ class DiskWithScrubbing(Disk):
 
         self.recovery_generator.reset(failure_time)
         recovery_time = self.recovery_generator.generateNextEvent(failure_time)
+        # add data transferring time
+        recovery_time += self.disk_repair_time
 
         # if recovery falls in one correlated failure interval, combines it with
         # this interval
@@ -191,7 +190,8 @@ class DiskWithScrubbing(Disk):
                 break
             e = Event(Event.EventType.LatentDefect, current_time, self)
             result_events.addEvent(e)
-            latent_recovery_time = ceil(current_time/self.scan_period)*self.scan_period
+            latent_recovery_time = ceil(current_time/self.scan_period)*self.scan_period + self.chunk_repair_time
+            e.next_recovery_time = latent_recovery_time
             if latent_recovery_time >= end_time:
                 break
             recovery_e = Event(Event.EventType.LatentRecovered, latent_recovery_time, self)

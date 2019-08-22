@@ -2,7 +2,7 @@ from enum import Enum
 
 
 class UnitState(Enum):
-    Normal = 0
-    Crashed = 1
-    Corrupted = 2
-    LatentError = 3
+    Normal = 1
+    Crashed = 0
+    Corrupted = -1
+    LatentError = -2

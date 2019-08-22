@@ -9,22 +9,27 @@ class Disk(Unit):
     def __init__(self, name, parent, parameters):
         super(Disk, self).__init__(name, parent, parameters)
         conf = Configuration()
-        self.chunks_per_disk = conf.chunks_per_disk
+        self.disk_capacity = conf.disk_capacity
+        self.disk_repair_time = conf.disk_repair_time
+        self.chunk_repair_time = conf.chunk_repair_time
+        self.slices_hit_by_LSE = []
         self.latent_error_generator = None
         self.scrub_generator = None
 
-    def setDiskCapacity(self, chunks_per_disk):
-        self.chunks_per_disk = chunks_per_disk
+    def setDiskCapacity(self, disk_capacity):
+        self.disk_capacity = disk_capacity
+
+    def getDiskCapacity(self):
+        return self.disk_capacity
+
+    def getSlicesHitByLSE(self):
+        return self.slices_hit_by_LSE
 
     def addEventGenerator(self, generator):
         if generator.getName() == "latentErrorGenerator":
             self.latent_error_generator = generator
         else:
             super(Disk, self).addEventGenerator(generator)
-
-    def addCorrelatedFailures(self, result_events, failure_time, recovery_time, lost_flag):
-        fail_event = super(Disk, self).addCorrelatedFailures(result_events, failure_time, recovery_time, lost_flag)
-        fail_event.next_recovery_time = recovery_time
 
     def generateEvents(self, result_events, start_time, end_time, reset):
         if start_time < self.start_time:
@@ -53,6 +58,8 @@ class Disk(Unit):
             recovery_time = self.recovery_generator.generateNextEvent(
                 current_time)
             assert (recovery_time > failure_time)
+            # for disk repair, detection and identification have been given by recovery generator, so we add data transferring time here.
+            recovery_time += self.disk_repair_time
 
             for [fail_time, recover_time, _bool] in self.failure_intervals:
                 if recovery_time < fail_time:

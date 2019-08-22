@@ -1,3 +1,4 @@
+from simulator.UnitState import UnitState
 
 
 class Base(object):
@@ -15,15 +16,19 @@ class Base(object):
     def isMDS(self):
         return True
 
-    # number of blocks on device.
+    # number of blocks on each disk.
     @property
     def DSC(self):
         return 1
 
-    # total block number for one stripe.
+    # total block amount for one stripe.
     @property
     def SSC(self):
         return self.n * self.DSC
+
+    @property
+    def SO(self):
+        return round(float(self.n)/self.k, 3)
 
     # normal repair cost
     @property
@@ -33,38 +38,36 @@ class Base(object):
     # optimal repair cost
     @property
     def ORC(self):
-        pass
+        return self.k
+
+    # repair traffic in number of blocks
+    def repairTraffic(self, hier=False, d_racks=0):
+        if not hier:
+            return float(self.ORC)
+        else:
+            return self.ORC * (1 - (float(self.n)/d_racks-1)/self.k)
 
     # Check 'state' can be recovered or not. If can be recovered, return the
     # corresponding repair cost, or return False.
-    # state = [1, 0, 1, 0, ..., 1], 1 for available, 0 for unavailable.
     def isRepairable(self, state):
         # state = -100 means data lost
         if isinstance(state, int):
             return False
         if len(state) != self.n:
             raise Exception("State Length Error!")
-
-        avails = state.count(1)
+        avails = state.count(UnitState.Normal)
         if avails >= self.k:
             return True
         return False
 
     # Repair failures one by one. 'index' is the block index which will be repaired.
-    def stateRepairCost(self, state, index=None):
+    def repair(self, state, index):
         pass
 
     # Repair all failures simultaneously.
-    def stateParallRepairCost(self, state):
+    # only_lost: only repair lost blocks
+    def parallRepair(self, state, only_lost=False):
         pass
-
-
-class BaseWithoutParititioning(object):
-    """
-    Base data redundancy scheme Class for unparititioning system, no blocks
-    in it, someone calls 'online encoding'.
-    """
-    pass
 
 
 if __name__ == "__main__":
