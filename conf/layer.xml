@@ -30,6 +30,11 @@
 	 				<lamda>0.5</lamda>
 	 				<beta>1.0</beta>
 	 			</eventGenerator>
+	 			<eventGenerator>
+	 				<name>recoveryGenerator2</name>
+	 				<class>simulator.failure.Period</class>
+	 				<gamma>24</gamma>
+	 			</eventGenerator>
 	 			<component>
 	 					<name>disk</name>
 	 					<count>20</count>
@@ -43,9 +48,8 @@
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>recoveryGenerator</name>
-	 						<class>simulator.failure.Real</class>
-	 						<gamma>6.0</gamma>
-	 						<lamda>6.0</lamda>
+	 						<class>simulator.failure.Period</class>
+	 						<gamma>24.0</gamma>
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>latentErrorGenerator</name>

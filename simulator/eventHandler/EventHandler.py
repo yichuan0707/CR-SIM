@@ -832,7 +832,7 @@ class EventHandler(object):
 
         else:
             for child in u.getChildren():
-                self.handleRecovery(child, time, e)
+                self.handleRecovery(child, time, e, queue)
 
     def handleLatentDefect(self, u, time, e):
         current_total_slices = self.calCurrentTotalSlices(time)
@@ -952,6 +952,8 @@ class EventHandler(object):
 
         if not self.queue_disable:
             queue_times, avg_queue_time = self.contention_model.statistics()
+            Result.queue_times = queue_times
+            Result.avg_queue_time = format(avg_queue_time, ".4f")
             info_logger.info("total times of queuing: %d, average queue time: %f" %
                     (queue_times, avg_queue_time))
 

@@ -17,11 +17,13 @@ class PSSDistribute(DataDistribute):
         full_disk_count = 0
         groups = []
 
-        while True:
+        while len(disks) >= self.n:
             group = []
-            if len(disks) < self.n:
-                break
 
+            # if len(disks) < self.n:
+            #     break
+
+            # why execution blocked here sometimes?
             chosen_racks = sample(disks, self.n)
             for rack_disks in chosen_racks:
                 disk_index_in_rack = randint(0, len(rack_disks)-1)

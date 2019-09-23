@@ -37,9 +37,6 @@ class Disk(Unit):
         current_time = start_time
         last_recover_time = start_time
 
-        # if self.children is not None and len(self.children) != 0:
-        #     raise Exception("Disk should not have any children!")
-
         while True:
             self.failure_generator.reset(current_time)
             failure_time = self.failure_generator.generateNextEvent(

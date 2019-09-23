@@ -440,6 +440,8 @@ class Configuration(object):
                         ", installment size: " + str(self.installment_size) + \
                         ", event file path: " + self.event_file + \
                         ", outputs: " + str(self.outputs) + \
+                        ", auto repair: " + str(self.auto_repair) + \
+                        ", hierarchical: " + str(self.hierarchical) + \
                         ", parallel repair: " + str(self.parallel_repair) + \
                         ", lazy recovery flag: " + str(self.lazy_recovery) + \
                         ", lazy only available: " + str(self.lazy_only_available) + \

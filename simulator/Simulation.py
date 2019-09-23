@@ -263,7 +263,7 @@ class Simulation(object):
         for i in xrange(num_iterations):
             result = self.run()
             contents.append([result.data_loss_prob, result.unavailable_prob, result.total_repair_transfers] +
-                            list(result.undurable_count_details))
+                            list(result.undurable_count_details) + [str(result.queue_times)+'*'+str(result.avg_queue_time)])
 
         res_file_path = RESULT + self.ts + ".csv"
         self.writeToCSV(res_file_path, contents)

@@ -1,4 +1,5 @@
 from random import random, uniform
+from math import ceil
 
 from simulator.Unit import Unit
 from simulator.Event import Event
@@ -15,6 +16,9 @@ class Machine(Unit):
         Machine.id_counter += 1
         super(Machine, self).__init__(name, parent, parameters)
 
+        # recovery generator for permanent machine failure
+        self.recovery_generator2 = None
+
         # amount of time after which a machine failure is treated as permanent,
         # and eager disk recovery is begun, if eager_recovery_enabled is True.
         self.fail_timeout = -1
@@ -30,9 +34,16 @@ class Machine(Unit):
 
         conf = Configuration()
         self.machine_repair_time = conf.node_repair_time
+        self.machine_check = 24
 
     def getFailureGenerator(self):
         return self.failure_generator
+
+    def addEventGenerator(self, generator):
+        if generator.getName() == "recoveryGenerator2":
+            self.recovery_generator2 = generator
+        else:
+            super(Machine, self).addEventGenerator(generator)
 
     def addCorrelatedFailures(self, result_events, failure_time, recovery_time, lost_flag):
         if lost_flag:
@@ -131,27 +142,11 @@ class Machine(Unit):
                     # failure type: tempAndShort=1, tempAndLong=2, permanent=3
                     failure_type = 3
 
-                    """
-                    # generate disk failures
-                    max_recovery_time = recovery_time
-                    for u in self.children:
-                        # ensure machine fails before disk
-                        disk_fail_time = failure_time + 1E-5
-                        disk_fail_event = Event(Event.EventType.Failure,
-                                                disk_fail_time, u, -200)
-                        result_events.addEvent(disk_fail_event)
-                        disk_recovery_time = u.generateRecoveryEvent(
-                            result_events, disk_fail_time, end_time-(1E-5))
-                        disk_fail_event.next_recovery_time = disk_recovery_time
-                        # machine recovery must coincide with last disk recovery
-                        if disk_recovery_time > max_recovery_time:
-                            max_recovery_time = disk_recovery_time
-                    """
-                    # detection time, identification time, data transferring time, we can not
-                    # obtain queue time here.
-                    detection_time = uniform(0, self.fail_timeout)
-                    recovery_time = failure_time + detection_time + self.fail_timeout + \
-                        self.machine_repair_time
+                    # detection_time = uniform(0, self.fail_timeout)
+                    # recovery_time = failure_time + detection_time + self.fail_timeout + \
+                    #     self.machine_repair_time
+                    # detection time and identification time comes from recovery_generator2
+                    recovery_time = self.recovery_generator2.generateNextEvent(failure_time) + self.machine_repair_time
                 else:
                     if recovery_time - failure_time <= self.fail_timeout:
                         # transient failure and come back very soon

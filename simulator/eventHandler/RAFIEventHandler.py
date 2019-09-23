@@ -326,7 +326,7 @@ class RAFIEventHandler(EventHandler):
 
     # data recovery is no relationship with component recovery,
     # so we just update failed slices.
-    def handleRecovery(self, u, time, e):
+    def handleRecovery(self, u, time, e, queue):
         if e.ignore:
             return
 
@@ -439,7 +439,7 @@ class RAFIEventHandler(EventHandler):
 
         else:
             for child in u.getChildren():
-                self.handleRecovery(child, time, e)
+                self.handleRecovery(child, time, e, queue)
 
     def handleEagerRecoveryStart(self, u, time, e, queue):
         return
