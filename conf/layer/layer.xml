@@ -13,7 +13,7 @@
 	 			<name>machine</name>
 	 			<count>200</count>
 	 			<class>simulator.unit.Machine</class>
-        <fail_fraction>0.02</fail_fraction>
+        <fail_fraction>0.026</fail_fraction>
         <eager_recovery_enabled>true</eager_recovery_enabled>
 				<fail_timeout>0.25</fail_timeout>
 	 			<eventGenerator>
@@ -30,6 +30,11 @@
 	 				<lamda>0.5</lamda>
 	 				<beta>1.0</beta>
 	 			</eventGenerator>
+	 			<eventGenerator>
+	 				<name>recoveryGenerator2</name>
+	 				<class>simulator.failure.Period</class>
+	 				<gamma>24</gamma>
+	 			</eventGenerator>
 	 			<component>
 	 					<name>disk</name>
 	 					<count>20</count>
@@ -43,10 +48,8 @@
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>recoveryGenerator</name>
-	 						<class>simulator.failure.WeibullGenerator</class>
-	 						<gamma>6.0</gamma>
-	 						<lamda>168.0</lamda>
-	 						<beta>2.0</beta>
+	 						<class>simulator.failure.Period</class>
+	 						<gamma>24.0</gamma>
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>latentErrorGenerator</name>

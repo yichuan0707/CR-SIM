@@ -8,13 +8,26 @@
 	 	<component>
 	 		<name>rack</name>
       <count>50</count>
-	 		<class>simulator.unit.Rack</class>
+      <class>simulator.unit.Rack</class>
+      <eventGenerator>
+        <name>failureGenerator</name>
+        <class>simulator.failure.WeibullGenerator</class>
+	 			<gamma>0.0</gamma>
+	 			<lamda>87600.0</lamda>
+        <beta>1.0</beta>
+	 		</eventGenerator>
+	 		<eventGenerator>
+	 			<name>recoveryGenerator</name>
+	 			<class>simulator.failure.WeibullGenerator</class>
+	 			<gamma>24.0</gamma>
+	 			<lamda>10.0</lamda>
+	 			<beta>1.0</beta>
+	 		</eventGenerator>
 	 		<component>
 	 			<name>machine</name>
 	 			<count>200</count>
 	 			<class>simulator.unit.Machine</class>
         <fail_fraction>0.026</fail_fraction>
-        <eager_recovery_enabled>true</eager_recovery_enabled>
 				<fail_timeout>0.25</fail_timeout>
 	 			<eventGenerator>
 	 				<name>failureGenerator</name>
@@ -32,8 +45,9 @@
 	 			</eventGenerator>
 	 			<eventGenerator>
 	 				<name>recoveryGenerator2</name>
-	 				<class>simulator.failure.Period</class>
-	 				<gamma>24</gamma>
+	 				<class>simulator.failure.Real</class>
+	 				<gamma>0.25</gamma>
+	 				<lamda>0.25</lamda>
 	 			</eventGenerator>
 	 			<component>
 	 					<name>disk</name>
@@ -48,8 +62,9 @@
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>recoveryGenerator</name>
-	 						<class>simulator.failure.Period</class>
-	 						<gamma>24.0</gamma>
+	 						<class>simulator.failure.Real</class>
+              <gamma>6.0</gamma>
+	 						<lamda>6.0</lamda>
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>latentErrorGenerator</name>
@@ -60,10 +75,8 @@
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>scrubGenerator</name>
-	 						<class>simulator.failure.WeibullGenerator</class>
-	 						<gamma>6.0</gamma>
-	 						<lamda>336</lamda>
-	 						<beta>3.0</beta>
+	 						<class>simulator.failure.Period</class>
+	 						<gamma>336.0</gamma>
 	 					</eventGenerator>
 	 			</component>
 	 		</component>

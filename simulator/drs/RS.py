@@ -1,4 +1,3 @@
-from simulator.UnitState import UnitState
 from simulator.drs.base import Base
 
 
@@ -11,10 +10,10 @@ class RS(Base):
     def repair(self, state, index):
         if not self.isRepairable(state):
             raise Exception("state can not be repaired!")
-        if state[index] == UnitState.Normal:
+        if state[index] == 1:
             raise Exception("index:" + str(index) + " in " +str(state) + " is normal state")
         else:
-            state[index] = UnitState.Normal
+            state[index] = 1
         return self.k
 
     # Suppose there is a (a < m) failures in one stripe. Parallel Repair
@@ -26,11 +25,11 @@ class RS(Base):
 
         repair_amount = 0
         for i in xrange(self.n):
-            if state[i] == UnitState.Corrupted or state[i] == UnitState.LatentError:
-                state[i] = UnitState.Normal
+            if state[i] == -1 or state[i] == -2:
+                state[i] = 1
                 repair_amount += 1
-            if not only_lost and state[i] == UnitState.Crashed:
-                state[i] = UnitState.Normal
+            if not only_lost and state[i] == 0:
+                state[i] = 1
                 repair_amount += 1
 
         if repair_amount == 0:
@@ -41,10 +40,10 @@ class RS(Base):
 
 if __name__ == "__main__":
     rs = RS(['9','6'])
-    state = [UnitState.Normal] * 9
-    state[2] = UnitState.Crashed
-    state[3] = UnitState.Corrupted
-    state[4] = UnitState.LatentError
+    state = [1] * 9
+    state[2] = 0
+    state[3] = -1
+    state[4] = -2
     print rs.isMDS
     print rs.DSC
     print rs.SSC

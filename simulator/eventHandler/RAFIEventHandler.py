@@ -3,13 +3,12 @@ from math import ceil
 from enum  import Enum
 
 from simulator.Log import info_logger, error_logger
-from simulator.UnitState import UnitState
 from simulator.Event import Event
 from simulator.unit.Machine import Machine
 from simulator.unit.Disk import Disk
 from simulator.unit.SliceSet import SliceSet
 
-from simulator.eventHandler.EventHandler import Recovery, EventHandler
+from simulator.eventHandler.EventHandler import EventHandler
 
 
 class FailedSlice(object):
@@ -186,8 +185,8 @@ class RAFIEventHandler(EventHandler):
 
                         repairable_before = self.isRepairable(slice_index)
                         index = self.slice_locations[slice_index].index(child)
-                        if self.status[slice_index][index] == UnitState.Normal:
-                            self.status[slice_index][index] = UnitState.Crashed
+                        if self.status[slice_index][index] == 1:
+                            self.status[slice_index][index] = 0
                         self._my_assert(self.availableCount(slice_index) >= 0)
 
                         repairable_current = self.isRepairable(slice_index)
@@ -264,9 +263,9 @@ class RAFIEventHandler(EventHandler):
                 repairable_before = self.isRepairable(slice_index)
 
                 index = self.slice_locations[slice_index].index(u)
-                if self.status[slice_index][index] == UnitState.Corrupted:
+                if self.status[slice_index][index] == -1:
                     continue
-                self.status[slice_index][index] = UnitState.Corrupted
+                self.status[slice_index][index] = -1
 
                 self._my_assert(self.durableCount(slice_index) >= 0)
 
@@ -302,7 +301,7 @@ class RAFIEventHandler(EventHandler):
                             threshold_crossed = True
                     if threshold_crossed:
                         projected_bandwidth_need += self.k - 1 + \
-                            (self.n - self.status[slice_index].count(UnitState.Normal))
+                            (self.n - self.status[slice_index].count(1))
 
             # current recovery bandwidth goes up by projected bandwidth need
             projected_bandwidth_need /= (e.next_recovery_time -
@@ -356,8 +355,8 @@ class RAFIEventHandler(EventHandler):
                             repairable_before = self.isRepairable(slice_index)
 
                             index = self.slice_locations[slice_index].index(disk)
-                            if self.status[slice_index][index] == UnitState.Crashed:
-                                self.status[slice_index][index] = UnitState.Normal
+                            if self.status[slice_index][index] == 0:
+                                self.status[slice_index][index] = 1
                             self.sliceRecoveredAvailability(slice_index)
 
                             repairable_current = self.isRepairable(slice_index)
@@ -412,7 +411,7 @@ class RAFIEventHandler(EventHandler):
 
                 if threshold_crossed:
                     index = self.slice_locations[slice_index].index(u)
-                    if self.status[slice_index][index] == UnitState.Corrupted or self.status[slice_index][index] == UnitState.LatentError:
+                    if self.status[slice_index][index] == -1 or self.status[slice_index][index] == -2:
                         repairable_before = self.isRepairable(slice_index)
 
                         if self.lazy_recovery or self.parallel_repair:
@@ -431,12 +430,6 @@ class RAFIEventHandler(EventHandler):
 
                     # must come after all counters are updated
                     self.sliceRecovered(slice_index)
-
-            self.slices_degraded_list.append((e.getTime(), self.current_slice_degraded))
-            self.slices_degraded_avail_list.append((e.getTime(), self.current_avail_slice_degraded))
-
-            self.addBandwidthStat(Recovery(u.getLastFailureTime(), e.getTime(), transfer_required))
-
         else:
             for child in u.getChildren():
                 self.handleRecovery(child, time, e, queue)
@@ -475,11 +468,6 @@ class RAFIEventHandler(EventHandler):
             self.sliceRecovered(slice_index)
 
         self.unfinished_rafi_events.removeEvent(e)
-
-        self.slices_degraded_list.append((e.getTime(), self.current_slice_degraded))
-        self.slices_degraded_avail_list.append((e.getTime(), self.current_avail_slice_degraded))
-
-        self.addBandwidthStat(Recovery(u.getLastFailureTime(), e.getTime(), transfer_required))
 
     def handleRealRecovery(self, u, time, e):
         pass

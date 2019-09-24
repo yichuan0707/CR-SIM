@@ -1,8 +1,13 @@
-from simulator.UnitState import UnitState
 
 
 class Base(object):
-
+    """
+    stripe state: [1,1,0,-1,-2,...]
+        block state 1 : Normal
+        block state 0 : Unavailable
+        block state -1: Lost(caused by disk corruption)
+        block state -2: Lost(hit by Latent Sector Error)
+    """
     def __init__(self, params):
         self.n = int(params[0])
         self.k = int(params[1])
@@ -55,7 +60,7 @@ class Base(object):
             return False
         if len(state) != self.n:
             raise Exception("State Length Error!")
-        avails = state.count(UnitState.Normal)
+        avails = state.count(1)
         if avails >= self.k:
             return True
         return False

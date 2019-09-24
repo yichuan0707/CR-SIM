@@ -1,4 +1,4 @@
-from simulator.Unit import Unit
+from simulator.unit.Unit import Unit
 
 
 class SliceSet(Unit):

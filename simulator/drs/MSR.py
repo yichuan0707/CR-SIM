@@ -1,4 +1,3 @@
-from simulator.UnitState import UnitState
 from simulator.drs.base import Base
 
 
@@ -31,11 +30,11 @@ class MSR(Base):
     def repair(self, state, index):
         if not self.isRepairable(state):
             raise Exception("state can not be repaired!")
-        if state[index] == UnitState.Normal:
+        if state[index] == 1:
             raise Exception("index:" + str(index) + " in " +str(state) + " is normal state")
 
-        avails = state.count(UnitState.Normal)
-        state[index] = UnitState.Normal
+        avails = state.count(1)
+        state[index] = 1
         if avails >= self.d:
             return self.ORC
         else:
@@ -48,13 +47,13 @@ class MSR(Base):
             raise Exception("state can not be repaired!")
 
         repair_amount = 0
-        avails = state.count(UnitState.Normal)
+        avails = state.count(1)
         for i in xrange(self.n):
-            if state[i] == UnitState.Corrupted or state[i] == UnitState.LatentError:
-                state[i] = UnitState.Normal
+            if state[i] == -1 or state[i] == -2:
+                state[i] = 1
                 repair_amount += 1
-            if not only_lost and state[i] == UnitState.Crashed:
-                state[i] = UnitState.Normal
+            if not only_lost and state[i] == 0:
+                state[i] = 1
                 repair_amount += 1
 
         if repair_amount == 0:
@@ -67,10 +66,10 @@ class MSR(Base):
 
 if __name__ == "__main__":
     msr = MSR([14, 10, 12])
-    state = [UnitState.Normal] * 14
-    state[1] = UnitState.Crashed
-    state[2] = UnitState.LatentError
-    state[3] = UnitState.Corrupted
+    state = [1] * 14
+    state[1] = 0
+    state[2] = -2
+    state[3] = -1
     print msr.SSC
     print msr.repair(state, 2)
     print msr.parallRepair(state, True)

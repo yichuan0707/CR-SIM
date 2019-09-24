@@ -1,4 +1,4 @@
-from simulator.Unit import Unit
+from simulator.unit.Unit import Unit
 from numpy import isnan, isinf
 from simulator.Event import Event
 from simulator.Configuration import Configuration

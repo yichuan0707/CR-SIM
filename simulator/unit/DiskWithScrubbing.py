@@ -10,8 +10,6 @@ class DiskWithScrubbing(Disk):
         super(DiskWithScrubbing, self).__init__(name, parent, parameters)
         self.last_recovery_time = 0.0
         self.last_scrub_start = 0.0
-        # Every 2 weeks = 336 hours scan the whole system.
-        self.scan_period = 336
 
     def setLastScrubStart(self, last_scrub_start):
         self.last_scrub_start = last_scrub_start
@@ -188,7 +186,7 @@ class DiskWithScrubbing(Disk):
                 break
             e = Event(Event.EventType.LatentDefect, current_time, self)
             result_events.addEvent(e)
-            latent_recovery_time = ceil(current_time/self.scan_period)*self.scan_period + self.chunk_repair_time
+            latent_recovery_time = self.scrub_generator.generateNextEvent(current_time)
             e.next_recovery_time = latent_recovery_time
             if latent_recovery_time >= end_time:
                 break

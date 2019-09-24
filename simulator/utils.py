@@ -25,19 +25,6 @@ def extractDRS(string):
     drs = splitMethod(string, '_')
     return [drs[0]] + [int(item) for item in drs[1:]]
 
-def extractHeteDRSFromDiffMedium(string):
-    drs = splitMethod(string, ':')
-    res = []
-    for item in drs:
-        medium_drs = []
-        item1 = item.replace('(', ' ')
-        item2 = item1.replace(')', ' ')
-        for s_item in splitMethod(item2):
-            medium_drs.append(extractDRS(s_item))
-        res.append(medium_drs)
-
-    return res
-
 
 class FIFO(object):
     """

@@ -1,7 +1,7 @@
 from random import random, uniform
 from math import ceil
 
-from simulator.Unit import Unit
+from simulator.unit.Unit import Unit
 from simulator.Event import Event
 from simulator.failure.Trace import Trace
 from simulator.Configuration import Configuration
@@ -34,7 +34,6 @@ class Machine(Unit):
 
         conf = Configuration()
         self.machine_repair_time = conf.node_repair_time
-        self.machine_check = 24
 
     def getFailureGenerator(self):
         return self.failure_generator
@@ -44,6 +43,9 @@ class Machine(Unit):
             self.recovery_generator2 = generator
         else:
             super(Machine, self).addEventGenerator(generator)
+
+    def getEventGenerators(self):
+        return [self.failure_generator, self.recovery_generator, self.recovery_generator2]
 
     def addCorrelatedFailures(self, result_events, failure_time, recovery_time, lost_flag):
         if lost_flag:

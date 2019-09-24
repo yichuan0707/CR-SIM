@@ -1,6 +1,5 @@
 from copy import deepcopy
 
-from simulator.UnitState import UnitState
 from simulator.drs.LRC import LRC
 
 
@@ -18,17 +17,17 @@ class XORBAS(LRC):
             return False
         parity_group = state[-(self.m1 + self.ll):]
         new_state = deepcopy(state)
-        if parity_group.count(UnitState.Normal) == len(parity_group) - 1:
+        if parity_group.count(1) == len(parity_group) - 1:
             for i, s in enumerate(parity_group):
-                if s != UnitState.Normal:
-                    new_state[self.k + i] = UnitState.Normal
+                if s != 1:
+                    new_state[self.k + i] = 1
                     break
         return super(XORBAS, self).isRepairable(new_state)
 
     def repair(self, state, index):
         if not self.isRepairable(state):
             raise Exception("state can not be repaired!")
-        if state[index] == UnitState.Normal:
+        if state[index] == 1:
             raise Exception("index:" + str(index) + " in " +str(state) + " is normal state")
 
         optimal_flag = False
@@ -42,12 +41,12 @@ class XORBAS(LRC):
 
         parity_group = state[self.k:]
 
-        if group.count(UnitState.Normal) >= b:
+        if group.count(1) >= b:
             optimal_flag = True
-        if index >= self.k and len(parity_group) - parity_group.count(UnitState.Normal) == 1:
+        if index >= self.k and len(parity_group) - parity_group.count(1) == 1:
             optimal_flag = True
 
-        state[index] = UnitState.Normal
+        state[index] = 1
         if optimal_flag:
             return self.ORC
         else:
@@ -59,11 +58,11 @@ class XORBAS(LRC):
 
         repair_index = []
         for i in xrange(self.n):
-            if state[i] == UnitState.Corrupted or state[i] == UnitState.LatentError:
-                state[i] = UnitState.Normal
+            if state[i] == -1 or state[i] == -2:
+                state[i] = 1
                 repair_index.append(i)
-            if not only_lost and state[i] == UnitState.Crashed:
-                state[i] = UnitState.Normal
+            if not only_lost and state[i] == 0:
+                state[i] = 1
                 repair_index.append(i)
 
         repair_amount = len(repair_index)
@@ -83,11 +82,11 @@ if __name__ == "__main__":
     # print lrc.ORC
     # print lrc.RC
 
-    state = [UnitState.Normal]*10
-    state[3] = UnitState.Crashed
-    state[4] = UnitState.Corrupted
-    state[5] = UnitState.LatentError
-    state[7] = UnitState.Corrupted
+    state = [1]*10
+    state[3] = 0
+    state[4] = -1
+    state[5] = -2
+    state[7] = -1
     print lrc.isRepairable(state)
     print "single repair cost is:", lrc.repair(state, 7)
     print lrc.parallRepair(state, False)

@@ -1,4 +1,3 @@
-from simulator.UnitState import UnitState
 from simulator.drs.base import Base
 
 
@@ -56,7 +55,7 @@ class LRC(Base):
         if len(state) != self.n:
             raise Exception("State Length Error!")
 
-        avails = state.count(UnitState.Normal)
+        avails = state.count(1)
 
         # all blocks is available, don't neeed repair
         if avails == self.n:
@@ -74,9 +73,9 @@ class LRC(Base):
         avail_equ = 0
         loss_amount = 0
         for group in local_groups:
-            group_loss_amount = len(group) - group.count(UnitState.Normal)
+            group_loss_amount = len(group) - group.count(1)
             if group_loss_amount <= self.m0:
-                global_group += [UnitState.Normal for item in xrange(b)]
+                global_group += [1 for item in xrange(b)]
             else:
                 avail_equ += self.m0
                 loss_amount += group_loss_amount
@@ -84,7 +83,7 @@ class LRC(Base):
 
         global_parity = state[-self.m1:]
         avail_equ += self.m1
-        loss_amount += self.m1 - global_parity.count(UnitState.Normal)
+        loss_amount += self.m1 - global_parity.count(1)
         global_group += global_parity
         # Available equations are no less than loss blocks means repairable.
         if avail_equ < loss_amount:
@@ -99,7 +98,7 @@ class LRC(Base):
     def repair(self, state, index):
         if not self.isRepairable(state):
             raise Exception("state can not be repaired!")
-        if state[index] == UnitState.Normal:
+        if state[index] == 1:
             raise Exception("index:" + str(index) + " in " +str(state) + " is normal state")
 
         optimal_flag = False
@@ -111,9 +110,9 @@ class LRC(Base):
         else:
             group = []
 
-        if group.count(UnitState.Normal) >= b:
+        if group.count(1) >= b:
             optimal_flag = True
-        state[index] = UnitState.Normal
+        state[index] = 1
         if optimal_flag:
             return self.ORC
         else:
@@ -125,11 +124,11 @@ class LRC(Base):
 
         repair_index = []
         for i in xrange(self.n):
-            if state[i] == UnitState.Corrupted or state[i] == UnitState.LatentError:
-                state[i] = UnitState.Normal
+            if state[i] == -1 or state[i] == -2:
+                state[i] = 1
                 repair_index.append(i)
-            if not only_lost and state[i] == UnitState.Crashed:
-                state[i] = UnitState.Normal
+            if not only_lost and state[i] == 0:
+                state[i] = 1
                 repair_index.append(i)
 
         repair_amount = len(repair_index)
@@ -148,10 +147,10 @@ if __name__ == "__main__":
     #print lrc.SSC
     #print lrc.ORC
     #print lrc.RC
-    state = [UnitState.Normal]*10
-    state[3] = UnitState.Crashed
-    state[4] = UnitState.Corrupted
-    state[5] = UnitState.LatentError
+    state = [1]*10
+    state[3] = 0
+    state[4] = -1
+    state[5] = -2
     print lrc.isRepairable(state)
     print lrc.repair(state, 4)
     print lrc.parallRepair(state, True)

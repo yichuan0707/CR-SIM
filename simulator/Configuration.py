@@ -2,7 +2,7 @@ import ConfigParser
 import os
 from math import ceil, floor
 from random import random
-from simulator.utils import splitMethod, splitIntMethod, splitFloatMethod, extractDRS, extractHeteDRSFromDiffMedium
+from simulator.utils import splitMethod, splitIntMethod, splitFloatMethod, extractDRS
 from simulator.Log import info_logger
 from simulator.drs.Handler import getDRSHandler
 
@@ -39,8 +39,8 @@ class Configuration(object):
         self.disk_capacity = float(d["disk_capacity"])
         # tanslate TB of manufacturrer(10^12 bytes) into GBs(2^30 bytes)
         self.actual_disk_capacity = self.disk_capacity * pow(10, 12)/ pow(2, 30)
-        self.max_chunks_per_disk = floor(self.actual_disk_capacity*1024/self.chunk_size)
-        # self.chunks_per_disk = int(d["chunks_per_disk"])
+        self.max_chunks_per_disk = int(floor(self.actual_disk_capacity*1024/self.chunk_size))
+
         self.disks_per_machine = int(d["disks_per_machine"])
         self.machines_per_rack = int(d["machines_per_rack"])
         self.rack_count = int(d["rack_count"])
@@ -56,9 +56,8 @@ class Configuration(object):
         if self.data_placement.lower() == "copyset":
             self.scatter_width = int(d["scatter_width"])
 
-        data_redundancy = d.pop("data_redundancy", None)
-        if data_redundancy is not None:
-            self.data_redundancy = extractDRS(data_redundancy)
+        data_redundancy = d.pop("data_redundancy")
+        self.data_redundancy = extractDRS(data_redundancy)
 
         # True means auto repair; False means manual repair
         self.auto_repair = self._bool(d.pop("auto_repair", "true"))
@@ -88,81 +87,19 @@ class Configuration(object):
 
         self.outputs = splitMethod(d["outputs"])
 
-        self.rafi_recovery = self._bool(d.pop("rafi_recovery", "false"))
-        if self.rafi_recovery:
-            if not self.conf.has_section("RAFI Recovery"):
-                raise Exception("Lack of RAFI Recovery Section in configuration file")
-            options = dict(self.conf.items("RAFI Recovery"))
+        rafi_intervals = d.pop("rafi_intervals", None)
+        if rafi_intervals is None:
+            self.rafi_recovery = False
+            self.rafi_intervals = rafi_intervals
+        else:
+            self.rafi_recovery = True
+            self.rafi_intervals = splitFloatMethod(rafi_intervals)
 
-            self.detect_intervals = splitFloatMethod(options["detect_intervals"])
-
-        self.heterogeneous_redundancy = self._bool(d.pop(
-            "heterogeneous_redundancy", "false"))
-        self.heterogeneous_medium = self._bool(d.pop(
-            "heterogeneous_medium", "false"))
-        # can not define heterogeneous_medium and heterogeneous_redundancy at same time
-        if self.heterogeneous_medium and self.heterogeneous_redundancy:
-            pass
-
-        if self.heterogeneous_redundancy:
-            if not self.conf.has_section("Heterogeneous Redundancy"):
-                raise Exception("Lack of Heterogeneous Redundancy Section in configuration file")
-            options = dict(self.conf.items("Heterogeneous Redundancy"))
-
-            self.data_redundancy = []
-            self.data_redundancy.append(extractDRS(options.pop("first_redundancy")))
-            self.data_redundancy.append(extractDRS(options.pop("second_redundancy")))
-            self.hr_policy = options.pop("hr_policy")
-            self.file_size_distribution = options.pop("file_size_distribution")
-            self.hotness_prob = float(options.pop("hotness_prob"))
-
-        if self.heterogeneous_medium:
-            if not self.conf.has_section("Heterogeneous Medium"):
-                raise Exception("Lack of Heterogeneous Medium Section in configuration file")
-            options = dict(self.conf.items("Heterogeneous Medium"))
-
-            self.mediums = options["mediums"]
-            self.data_redundancy = extractHeteDRSFromDiffMedium(options["redundancies"])
-            self.transform_policy = options["transform_policy"]
-
-        self.drs_handler = self.DRSHandler()
+        self.drs_handler = getDRSHandler(self.data_redundancy[0], self.data_redundancy[1:])
         if not self.lazy_recovery:
             self.recovery_threshold = self.drs_handler.n - 1
         else:
             self.recovery_threshold = int(d.pop("recovery_threshold"))
-
-        self.system_scaling = self._bool(d.pop("system_scaling", "false"))
-        if self.system_scaling:
-            sections = self._getSections("System Scaling")
-            if sections == []:
-                raise Exception("No System Scaling section in configuration file")
-            self.system_scaling_infos = []
-            for section in sections:
-                self.system_scaling_infos.append(self.parserScalingSettings(section))
-
-        self.system_upgrade = self._bool(d.pop("system_upgrade", "false"))
-        if self.system_upgrade:
-            sections = self._getSections("System Upgrade")
-            if sections == []:
-                raise Exception("No System Upgrade section in configuration file")
-            self.system_upgrade_infos = []
-            for section in sections:
-                self.system_upgrade_infos.append(self.parserUpgradeSettings(section))
-
-        self.correlated_failures = self._bool(d.pop("correlated_failures", "false"))
-        if self.correlated_failures:
-            sections = self._getSections("Correlated Failures")
-            if sections == []:
-                raise Exception("No Correlated Failures section in configuration file")
-            self.correlated_failures_infos = []
-            for section in sections:
-                self.correlated_failures_infos.append(self.parserCorrelatedSetting(section))
-
-        self.block_failure = self._bool(d.pop("block_failure", "false"))
-        if self.block_failure:
-            if not self.conf.has_section("Block Failure"):
-                raise Exception("Lack of Block Failure Section in configuration file")
-            self.block_failure_prob = self.conf.getfloat("Block Failure", "block_failure_prob")
 
         # total slices calculate like this only without heterogeneous redundancy
         self.total_slices = int(ceil(self.total_active_storage*pow(2,30)/(self.drs_handler.k*self.chunk_size)))
@@ -171,9 +108,6 @@ class Configuration(object):
             self.chunk_repair_time, self.disk_repair_time, self.node_repair_time = self.autoRepairTime()
         else:
             self.chunk_repair_time, self.disk_repair_time, self.node_repair_time = self.manualRepairTime()
-
-        # calculation!!!
-        # self.rack_count = int(ceil((self.total_slices * self.drs_handler.n)/(self.chunks_per_disk*self.disks_per_machine*self.machines_per_rack*5.0/6.0)))
 
 
     def _bool(self, string):
@@ -272,86 +206,7 @@ class Configuration(object):
         return self.event_file is not None
 
     def DRSHandler(self):
-        if self.heterogeneous_redundancy and self.heterogeneous_medium:
-            pass
-        elif self.heterogeneous_redundancy and not self.heterogeneous_medium:
-            pass
-        elif not self.heterogeneous_redundancy and self.heterogeneous_medium:
-            pass
-        else:
-            drs_handler = getDRSHandler(self.data_redundancy[0], self.data_redundancy[1:])
-
-        return drs_handler
-
-    def parserScalingSettings(self, section_name):
-        scaling_start = self.conf.getint(section_name, "scaling_start")
-        style = self.conf.getint(section_name, "style")
-        inc_capacity = self.conf.getfloat(section_name, "inc_capacity")
-        inc_slices = self.conf.getint(section_name, "inc_slices")
-        add_slice_start = self.conf.getint(section_name, "add_slice_start")
-        slice_rate = self.conf.getfloat(section_name, "slice_rate")
-        load_balancing = self.conf.getboolean(section_name, "load_balancing")
-
-        new_disk_capacity = None
-        if style == 0:
-            new_disk_capacity = self.conf.getfloat(section_name, "new_disk_capacity")
-        try:
-            disk_failure_generator = self.conf.get(section_name, "disk_failure_generator")
-        except ConfigParser.NoOptionError:
-            disk_failure_generator = None
-        try:
-            disk_recovery_generator = self.conf.get(section_name, "disk_recovery_generator")
-        except ConfigParser.NoOptionError:
-            disk_recovery_generator = None
-
-        return [scaling_start, style, inc_capacity, inc_slices, add_slice_start, slice_rate, load_balancing,
-                new_disk_capacity, disk_failure_generator, disk_recovery_generator]
-
-    def parserUpgradeSettings(self, section_name):
-        upgrade_start = self.conf.getint(section_name, "upgrade_start")
-        upgrade_concurrence = self.conf.getint(section_name, "upgrade_concurrence")
-        upgrade_interval = self.conf.getfloat(section_name, "upgrade_interval")
-        downtime = self.conf.getfloat(section_name, "downtime")
-
-        return (upgrade_start, upgrade_concurrence, upgrade_interval, downtime)
-
-    def parserCorrelatedSetting(self, section_name):
-        occurrence_timestamp = self.conf.getint(section_name, "occurrence_timestamp")
-        una_scope = self.conf.get(section_name, "una_scope")
-        una_downtime = self.conf.getfloat(section_name, "una_downtime")
-        try:
-            dl_scope = self.conf.get(section_name, "dl_scope")
-            dl_downtime = self.conf.getfloat(section_name, "dl_downtime")
-        except ConfigParser.NoOptionError:
-            dl_scope = None
-            dl_downtime = None
-        try:
-            choose_from_una = self.conf.getboolean(section_name, "choose_from_una")
-        except ConfigParser.NoOptionError:
-            choose_from_una = False
-
-        return (occurrence_timestamp, una_scope, una_downtime, dl_scope, dl_downtime, choose_from_una)
-
-    # Time table for total slices changes
-    def tableForTotalSlice(self):
-        time_table = []
-        total_slices = self.total_slices
-        if not self.system_scaling:
-            time_table.append([0, self.total_time, total_slices, 0])
-        else:
-            start_time = 0
-            end_time = 0
-            for i, info in enumerate(self.system_scaling_infos):
-                end_time = info[0] + info[4]
-                time_table.append([start_time, end_time, total_slices, 0])
-                start_time = end_time
-                end_time += float(info[3])/info[5]
-                time_table.append([start_time, end_time, total_slices, info[5]])
-                total_slices += info[3]
-
-            time_table.append([end_time, self.total_time, total_slices, 0])
-
-        return time_table
+        return self.drs_handler
 
     def getAvailableLazyThreshold(self, time_since_failed):
         threshold_gap = self.drs_handler.n - 1 - self.recovery_threshold
@@ -392,31 +247,10 @@ class Configuration(object):
              self.availability_counts_for_recovery,
              "parallel_repair": self.parallel_repair,
              "lazy_recovery": self.lazy_recovery,
-             "rafi_recovery": self.rafi_recovery,
-             "heterogeneous_redundancy": self.heterogeneous_redundancy,
-             "heterogeneous_medium": self.heterogeneous_medium,
-             "system_scaling": self.system_scaling,
-             "system_upgrade": self.system_upgrade,
-             "correlated_failures": self.correlated_failures,
-             "block_failure": self.block_failure}
+             "rafi_recovery": self.rafi_recovery}
 
         if self.rafi_recovery:
             d["detect_intervals"] = self.detect_intervals
-        if self.heterogeneous_redundancy:
-            d["hr_policy"] = self.hr_policy
-            d["file_size_distribution"] = self.file_size_distribution
-            d["hotness_prob"] = self.hotness_prob
-        if self.heterogeneous_medium:
-            d["heterogeneous_mediums"] = self.mediums
-            d["transform_policy"] = self.transform_policy
-        if self.block_failure:
-            d["block_failure_prob"] = self.block_failure_prob
-        if self.system_scaling:
-            d["system_scaling_infos"] = self.system_scaling_infos
-        if self.system_upgrade:
-            d["system_upgrade_infos"] = self.system_upgrade_infos
-        if self.correlated_failures:
-            d["correlated_failures"] = self.correlated_failures_infos
 
         return d
 
@@ -446,15 +280,7 @@ class Configuration(object):
                         ", lazy recovery flag: " + str(self.lazy_recovery) + \
                         ", lazy only available: " + str(self.lazy_only_available) + \
                         ", recovery threshold: " + str(self.recovery_threshold) + \
-                        ", rafi recovery flag: " + str(self.rafi_recovery) + \
-                        ", heterogeneous redundancy flag: " + str(self.heterogeneous_redundancy) + \
-                        ", heterogeneous medium flag: " + str(self.heterogeneous_medium) + \
-                        ", system Scaling flag: " + str(self.system_scaling) + \
-                        ", system upgrade flag: " + str(self.system_upgrade) + \
-                        ", correlated failures flag: " + str(self.correlated_failures)
-
-        if self.block_failure:
-            default_infos += ", block failure prob: " + str(self.block_failure_prob)
+                        ", rafi recovery flag: " + str(self.rafi_recovery)
 
         info_logger.info(default_infos)
 
@@ -464,39 +290,13 @@ class Configuration(object):
         if self.lazy_recovery or self.rafi_recovery:
             info_logger.info(recovery_infos)
 
-        heterogeneous_infos = "(Heterogeneous Configurations) "
-        if self.heterogeneous_redundancy:
-            heterogeneous_infos += "heterogeneous data redundancy: " + str(self.data_redundancy) + \
-                                   ", transform policy for hetero-redundancy: " + str(self.hr_policy)
-            if self.hr_policy == "size":
-                heterogeneous_infos += ", file size distribution: " + str(self.file_size_distribution)
-            if self.hr_policy == "hotness":
-                heterogeneous_infos += ", hotness probability: " + str(self.hotness_prob)
-            heterogeneous_infos += "\t"
-        if self.heterogeneous_medium:
-            heterogeneous_infos += " heterogeneous storage mediums: " + str(self.mediums) + \
-                                   ", heterogeneous data redundancy: " + str(self.data_redundancy) + \
-                                   ", transform policy for hetero-mediums: " + str(self.transform_policy)
-        if self.heterogeneous_redundancy or self.heterogeneous_medium:
-            info_logger.info(heterogeneous_infos)
-
-        if self.system_scaling:
-            info_logger.info("System scaling Configurations: " + str(self.system_scaling_infos))
-
-        if self.system_upgrade:
-            info_logger.info("System upgrade Configurations: " + str(self.system_upgrade_infos))
-
-        if self.correlated_failures:
-            info_logger.info("Correlated Failures Configurations: " + str(self.correlated_failures_infos))
-
 
 if __name__ == "__main__":
     conf = Configuration("/root/CR-SIM/conf/cr-sim.conf")
     drs_handler = conf.DRSHandler()
-    print conf.tableForTotalSlice()
     print conf.total_slices
     print conf.rack_count
     conf.printTest()
     conf.printAll()
-    print conf.detect_intervals
+    print conf.rafi_intervals
     print conf.chunk_repair_time, conf.disk_repair_time, conf.node_repair_time
