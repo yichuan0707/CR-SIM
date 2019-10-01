@@ -8,9 +8,10 @@ class Result(object):
     unavailable_slice_durations = {}
     NOMDL = 0
     data_loss_prob = 0.0
+    # unavailability = MTTR/(MTTF + MTTR)
     unavailable_prob = 0.0
+    # unavailability = downtime/(uptime+downtime)
     unavailable_prob1 = 0.0
-    unavailable_prob2 = 0.0
     total_repair_transfers = 0.0
     queue_times = 0
     avg_queue_time = 0.0
@@ -20,7 +21,6 @@ class Result(object):
             "  undurable=" + str(Result.undurable_count) + \
             " unavailable_prob=" + str(Result.unavailable_prob) + \
             " unavailable_prob1=" + str(Result.unavailable_prob1) + \
-            " unavailable_prob2=" + str(Result.unavailable_prob2) + \
             " data loss prob=" + str(Result.data_loss_prob) + \
             " total_repair_transfers=" + str(Result.total_repair_transfers) + "TiB" + \
             " NOMDL=" + str(Result.NOMDL) + " queue times=" + str(Result.queue_times) + \

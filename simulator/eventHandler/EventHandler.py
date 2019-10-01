@@ -208,11 +208,7 @@ class EventHandler(object):
                 state.append(s)
         return not self.drs_handler.isRepairable(state)
 
-    # "merge_flag=True" means simultaneous multiple unavailable stripes will
-    # be treated as one unavailable event;
-    # "merge_flag=False" means simultaneous multiple unavailable stripes will be
-    # treated as multiple unavailable event.
-    def processDuration(self, merge_flag):
+    def processDuration(self):
         TTFs = []
         # failure timestamps
         FTs = []
@@ -224,8 +220,6 @@ class EventHandler(object):
 
         for slice_index in unavail_slices:
             for duration in self.unavailable_slice_durations[slice_index]:
-                if merge_flag and (duration[0] in FTs):
-                    continue
                 FTs.append(duration[0])
                 if len(duration) == 1:
                     TTRs.append(self.end_time - duration[0])
@@ -240,9 +234,7 @@ class EventHandler(object):
         return (TTFs, TTRs)
 
 
-    def calUA(self, durations):
-        TTFs = durations[0]
-        TTRs = durations[1]
+    def calUA(self, TTFs, TTRs):
         if len(TTFs) == 0 or len(TTRs) == 0:
             return format(0.0, ".4e")
         MTTF = sum(TTFs)/len(TTFs)
@@ -734,10 +726,9 @@ class EventHandler(object):
         Result.unavailable_slice_durations = self.unavailable_slice_durations
         Result.data_loss_prob = data_loss_prob
 
-        Result.unavailable_prob = self.calUA(self.processDuration(False))
-        TTFs, TTRs = self.processDuration(True)
-        Result.unavailable_prob1 = self.calUA((TTFs, TTRs))
-        Result.unavailable_prob2 = self.calUADowntime(TTRs)
+        TTFs, TTRs = self.processDuration()
+        Result.unavailable_prob = self.calUA(TTFs, TTRs)
+        Result.unavailable_prob1 = self.calUADowntime(TTRs)
 
         Result.undurable_count_details = self.calUndurableDetails()
         Result.NOMDL = self.NOMDL()

@@ -25,7 +25,7 @@ from simulator.dataDistribute.PSSDistribute import PSSDistribute, HierPSSDistrib
 from simulator.dataDistribute.COPYSETDistribute import COPYSETDistribute, HierCOPYSETDistribute
 
 DEFAULT = r"/root/CR-SIM/conf/"
-RESULT = r"/root/CR-SIM/log/result-"
+RESULT = r"/root/CR-SIM/log/"
 
 def returnDistributer(data_placement, hier):
     if data_placement == "sss":
@@ -116,9 +116,13 @@ class Simulation(object):
 
         for i in xrange(num_iterations):
             result = self.run()
-            contents.append([result.data_loss_prob, result.unavailable_prob, result.unavailable_prob1, result.unavailable_prob2, result.total_repair_transfers])
+            outputs = [result.data_loss_prob, result.unavailable_prob, result.unavailable_prob1, result.total_repair_transfers]
+            if not self.conf.queue_disable:
+                outputs.append(result.queue_times)
+                outputs.append(result.avg_queue_time)
+            contents.append(outputs)
 
-        res_file_path = RESULT + self.ts + ".csv"
+        res_file_path = RESULT + self.conf.data_redundancy + '-' + self.ts + ".csv"
         self.writeToCSV(res_file_path, contents)
 
 

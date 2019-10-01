@@ -56,8 +56,8 @@ class Configuration(object):
         if self.data_placement.lower() == "copyset":
             self.scatter_width = int(d["scatter_width"])
 
-        data_redundancy = d.pop("data_redundancy")
-        self.data_redundancy = extractDRS(data_redundancy)
+        self.data_redundancy = d.pop("data_redundancy")
+        data_redundancy = extractDRS(self.data_redundancy)
 
         # True means auto repair; False means manual repair
         self.auto_repair = self._bool(d.pop("auto_repair", "true"))
@@ -95,7 +95,7 @@ class Configuration(object):
             self.rafi_recovery = True
             self.rafi_intervals = splitFloatMethod(rafi_intervals)
 
-        self.drs_handler = getDRSHandler(self.data_redundancy[0], self.data_redundancy[1:])
+        self.drs_handler = getDRSHandler(data_redundancy[0], data_redundancy[1:])
         if not self.lazy_recovery:
             self.recovery_threshold = self.drs_handler.n - 1
         else:
@@ -268,7 +268,7 @@ class Configuration(object):
                         ", rack count: " + str(self.rack_count) + \
                         ", chunk size: " + str(self.chunk_size) + "MB" + \
                         ", total active storage: " + str(self.total_active_storage) + "PB" +\
-                        ", data redundancy: " + str(self.data_redundancy) + \
+                        ", data redundancy: " + self.data_redundancy + \
                         ", data placement: " + self.data_placement + \
                         ", recovery bandwidth cross rack: " + str(self.recovery_bandwidth_cross_rack) + \
                         ", installment size: " + str(self.installment_size) + \
