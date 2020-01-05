@@ -50,7 +50,11 @@ class Base(object):
         if not hier:
             return float(self.ORC)
         else:
-            return self.ORC * (1 - (float(self.n)/d_racks-1)/self.k)
+            rt = float(self.ORC - (float(self.n)/d_racks - 1))
+            if rt < float(0):
+                return 0
+            else:
+                return rt
 
     # Check 'state' can be recovered or not. If can be recovered, return the
     # corresponding repair cost, or return False.

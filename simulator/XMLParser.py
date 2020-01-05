@@ -75,7 +75,6 @@ class XMLParser(object):
         else:
             raise Exception("Invalid event class name")
 
-    @property
     def config(self):
         return self.conf
 
@@ -114,13 +113,13 @@ class XMLParser(object):
             raise Exception("no class name for " + node.tag)
 
         if name.lower() == "rack":
-            count = self.conf.rack_count
+            count = self.conf.getRackCount()
         elif name.lower() == "machine":
-            count = self.conf.machines_per_rack
+            count = self.conf.getMachinesPerRack()
         elif name.lower() == "disk":
-            count = self.conf.disks_per_machine
+            count = self.conf.getDisksPerMachine()
         elif name.lower() == "datacenter":
-            count = self.conf.datacenters
+            count = self.conf.getDCCount()
         else:
             pass
 

@@ -51,3 +51,4 @@ if __name__ == "__main__":
     print rs.isRepairable(state)
     print rs.repair(state, 3)
     print rs.parallRepair(state, False)
+

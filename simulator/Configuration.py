@@ -87,13 +87,13 @@ class Configuration(object):
 
         self.outputs = splitMethod(d["outputs"])
 
-        rafi_intervals = d.pop("rafi_intervals", None)
-        if rafi_intervals is None:
+        detect_intervals = d.pop("detect_intervals", None)
+        if detect_intervals is None:
             self.rafi_recovery = False
-            self.rafi_intervals = rafi_intervals
+            self.detect_intervals = detect_intervals
         else:
             self.rafi_recovery = True
-            self.rafi_intervals = splitFloatMethod(rafi_intervals)
+            self.detect_intervals = splitFloatMethod(detect_intervals)
 
         self.drs_handler = getDRSHandler(data_redundancy[0], data_redundancy[1:])
         if not self.lazy_recovery:
@@ -104,11 +104,7 @@ class Configuration(object):
         # total slices calculate like this only without heterogeneous redundancy
         self.total_slices = int(ceil(self.total_active_storage*pow(2,30)/(self.drs_handler.k*self.chunk_size)))
 
-        if self.auto_repair:
-            self.chunk_repair_time, self.disk_repair_time, self.node_repair_time = self.autoRepairTime()
-        else:
-            self.chunk_repair_time, self.disk_repair_time, self.node_repair_time = self.manualRepairTime()
-
+        self.chunk_repair_time, self.disk_repair_time, self.node_repair_time = self._repairTime()
 
     def _bool(self, string):
         if string.lower() == "true":
@@ -132,7 +128,15 @@ class Configuration(object):
                 sections.append(item)
         return sections
 
-    def autoRepairTime(self):
+    def _getRepairTraffic(self):
+        # repair traffic in chunks
+        if not self.hierarchical:
+            repair_traffic = self.drs_handler.repairTraffic()
+        else:
+            repair_traffic = self.drs_handler.repairTraffic(self.hierarchical, self.distinct_racks)
+        return repair_traffic
+
+    def _repairTime(self):
         if not self.hierarchical and self.data_placement == "sss":
             r = self.rack_count
         elif not self.hierarchical and self.data_placement == "pss":
@@ -152,12 +156,7 @@ class Configuration(object):
         aggregate_bandwidth = self.recovery_bandwidth_cross_rack * r
         aggregate_bandwidth_for_single_block = self.recovery_bandwidth_cross_rack * min(r, self.drs_handler.k)
 
-        # repair traffic in chunks
-        if not self.hierarchical:
-            repair_traffic = self.drs_handler.repairTraffic()
-        else:
-            repair_traffic = self.drs_handler.repairTraffic(self.hierarchical, self.distinct_racks)
-
+        repair_traffic = self._getRepairTraffic()
         # used disk space in MBs
         used_disk_space = self.drs_handler.SO*self.total_active_storage*pow(2,30)/(self.rack_count*self.machines_per_rack*self.disks_per_machine)
 
@@ -168,38 +167,17 @@ class Configuration(object):
 
         return chunk_repair_time, disk_repair_time, node_repair_time
 
-    def manualRepairTime(self):
-        if not self.hierarchical and self.data_placement == "sss":
-            r = min(self.rack_count, self.drs_handler.k)
-        elif not self.hierarchical and self.data_placement == "pss":
-            r = min(self.rack_count, self.drs_handler.k)
-        elif not self.hierarchical and self.data_placement == "copyset":
-            r = min(self.rack_count, self.drs_handler.k, self.scatter_width)
-        elif self.hierarchical and self.data_placement == "sss":
-            r = min(self.rack_count, self.drs_handler.k)
-        elif self.hierarchical and self.data_placement == "pss":
-            r = min(self.rack_count, self.drs_handler.k, self.distinct_racks)
-        elif self.hierarchical and self.data_placement == "copyset":
-            r = min(self.rack_count, self.drs_handler.k, self.scatter_width, self.distinct_racks)
-        else:
-            raise Exception("Incorrect data placement")
+    def getDCCount(self):
+        return self.datacenters
 
-        aggregate_bandwidth = min(r*self.recovery_bandwidth_cross_rack, self.node_bandwidth)
+    def getRackCount(self):
+        return self.rack_count
 
-        # repair traffic in chunks
-        if not self.hierarchical:
-            repair_traffic = self.drs_handler.repairTraffic()
-        else:
-            repair_traffic = self.drs_handler.repairTraffic(self.hierarchical, self.distinct_racks)
+    def getMachinesPerRack(self):
+        return self.machines_per_rack
 
-        # used disk space in MBs
-        used_disk_space = self.drs_handler.SO*self.total_active_storage*pow(2,30)/(self.rack_count*self.machines_per_rack*self.disks_per_machine)
-
-        # repair time in hours
-        chunk_repair_time = round(repair_traffic*self.chunk_size/aggregate_bandwidth, 5)
-        disk_repair_time = round(repair_traffic*used_disk_space/aggregate_bandwidth, 5)
-        node_repair_time = disk_repair_time*self.disks_per_machine
-        return chunk_repair_time, disk_repair_time, node_repair_time
+    def getDisksPerMachine(self):
+        return self.disks_per_machine
 
     # "True" means events record to file, and vice versa.
     def eventToFile(self):
@@ -223,7 +201,6 @@ class Configuration(object):
         threshold_increment = threshold_gap * \
             (1 if random() < self.recovery_probability[i] else 0)
         return self.recovery_threshold + threshold_increment
-
 
     def returnSliceSize(self):
         return self.chunk_size * self.drs_handler.n
@@ -282,6 +259,11 @@ class Configuration(object):
                         ", recovery threshold: " + str(self.recovery_threshold) + \
                         ", rafi recovery flag: " + str(self.rafi_recovery)
 
+        if self.data_placement == "copyset":
+            default_infos += ", scatter width: " + str(self.scatter_width)
+        if self.hierarchical:
+            default_infos += ", distinct racks: " + str(self.distinct_racks)
+
         info_logger.info(default_infos)
 
         recovery_infos = ""
@@ -292,11 +274,11 @@ class Configuration(object):
 
 
 if __name__ == "__main__":
-    conf = Configuration("/root/CR-SIM/conf/cr-sim.conf")
+    conf = Configuration("/root/CR-SIM/conf/samples/pss_hier_lazy_rafi/RS.conf")
     drs_handler = conf.DRSHandler()
     print conf.total_slices
     print conf.rack_count
     conf.printTest()
     conf.printAll()
-    print conf.rafi_intervals
+    print conf.detect_intervals
     print conf.chunk_repair_time, conf.disk_repair_time, conf.node_repair_time

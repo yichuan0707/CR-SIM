@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from math import sqrt, ceil
-from random import randint, choice
+from random import randint, choice, sample
 from copy import deepcopy
 
 from simulator.Event import Event
@@ -208,7 +208,10 @@ class EventHandler(object):
                 state.append(s)
         return not self.drs_handler.isRepairable(state)
 
-    def processDuration(self):
+    # system_level=True means the TTFs/TTRs statistics come from system perspective,
+    #                   concurrent stripes' failures will be recorded as one duration;
+    # system_level=False is the opposite.
+    def processDuration(self, system_perspective=True):
         TTFs = []
         # failure timestamps
         FTs = []
@@ -220,6 +223,8 @@ class EventHandler(object):
 
         for slice_index in unavail_slices:
             for duration in self.unavailable_slice_durations[slice_index]:
+                if system_perspective and (duration[0] in FTs):
+                    continue
                 FTs.append(duration[0])
                 if len(duration) == 1:
                     TTRs.append(self.end_time - duration[0])
@@ -284,7 +289,7 @@ class EventHandler(object):
                 if ts <= t:
                     undurable += 1
 
-        NOMDL = undurable * (self.conf.chunk_size * pow(2, 20) * self.k) / (self.conf.total_active_storage * pow(2, 10))
+        NOMDL = undurable * (self.conf.chunk_size * pow(2, 20)) / (self.conf.total_active_storage * pow(2, 10))
         return NOMDL
 
     # calculate current total slices to cope with system scaling.
@@ -516,67 +521,62 @@ class EventHandler(object):
                             # must come after all counters are updated
                             self.sliceRecovered(slice_index)
             else:  # e.info == 3 and queue_disable = False,  permanent machine failure with queue time
-                chosen_racks = []
+                disks = u.getChildren()
+                empty_flag = True
+                for disk in disks:
+                    if disk.getChildren() != []:
+                        empty_flag = False
+                        break
+                if empty_flag:
+                    return
+
                 node_repair_time = self.conf.node_repair_time
                 node_repair_start = time - node_repair_time
-                if self.conf.data_placement == "sss":
-                    chosen_racks = self.distributer.getAllRacks()
-                else:
-                    groups = self.distributer.getGroups()
-                    for group in groups:
-                        right_group = False
-                        for disk_instansce in group:
-                            machine = disk_instansce.getParent()
-                            if u == machine:
-                                right_group = True
-                        if right_group:
-                            for disk_instansce in group:
-                                machine = disk_instansce.getParent()
-                                rack = machine.getParent()
-                                if machine != u and rack not in chosen_racks:
-                                    chosen_racks.append(rack)
+                all_racks = self.distributer.getAllRacks()
 
+                if self.conf.data_placement == "sss":
+                    queue_rack_count = self.conf.rack_count
+                elif self.conf.data_placement == "pss" and not self.conf.hierarchical:
+                    queue_rack_count = self.n
+                elif self.conf.data_placement == "copyset" and not self.conf.hierarchical:
+                    queue_rack_count = self.conf.scatter_width
+                else:
+                    queue_rack_count = self.conf.distinct_racks
                 if self.conf.data_redundancy[0] in ["MSR", "MBR"]:
                     num = self.conf.drs_handler.d
                 else:
                     num = self.conf.drs_handler.k
+
+                chosen_racks = sample(all_racks, queue_rack_count)
                 recovery_time = self.contention_model.occupy(node_repair_start, chosen_racks, num, node_repair_time)
                 recovery_event = Event(Event.EventType.Recovered, recovery_time, u, 4)
                 queue.addEvent(recovery_event)
         elif isinstance(u, Disk):
             if e.info != 4 and not self.queue_disable:
-                chosen_racks = []
+                if len(u.getChildren()) == 0:
+                    return
+
+                all_racks = self.distributer.getAllRacks()
                 disk_repair_time = self.conf.disk_repair_time
                 disk_repair_start = time - disk_repair_time
                 if self.conf.data_placement == "sss":
-                    chosen_racks = self.distributer.getAllRacks()
+                    queue_rack_count = self.conf.rack_count
+                elif self.conf.data_placement == "pss" and not self.conf.hierarchical:
+                    queue_rack_count = self.n
+                elif self.conf.data_placement == "copyset" and not self.conf.hierarchical:
+                    queue_rack_count = self.conf.scatter_width
                 else:
-                    groups = self.distributer.getGroups()
-                    print "groups length:", len(groups)
-                    print "disk name: ", u.toString()
-                    for group in groups:
-                        right_group = False
-                        for disk_instansce in group:
-                            # print "u id:", u.id
-                            # print "disk_instansce id:", disk_instansce.id
-                            if u == disk_instansce:
-                                right_group = True
-                                break
-
-                        if right_group:
-                            for disk_instansce in group:
-                                machine = disk_instansce.getParent()
-                                rack = machine.getParent()
-                                if disk_instansce != u and rack not in chosen_racks:
-                                    chosen_racks.append(rack)
-                    # lost disk is empty, not slices in it
-                    if chosen_racks == []:
-                        return
+                    queue_rack_count = self.conf.distinct_racks
+                if self.conf.data_redundancy[0] in ["MSR", "MBR"]:
+                    num = self.conf.drs_handler.d
+                else:
+                    num = self.conf.drs_handler.k
 
                 if self.conf.data_redundancy[0] in ["MSR", "MBR"]:
                     num = self.conf.drs_handler.d
                 else:
                     num = self.conf.drs_handler.k
+                chosen_racks = sample(all_racks, queue_rack_count)
                 recovery_time = self.contention_model.occupy(disk_repair_start, chosen_racks, num, disk_repair_time)
                 recovery_event = Event(Event.EventType.Recovered, recovery_time, u, 4)
                 queue.addEvent(recovery_event)

@@ -140,6 +140,7 @@ class DiskWithScrubbing(Disk):
 
         self.recovery_generator.reset(failure_time)
         recovery_time = self.recovery_generator.generateNextEvent(failure_time)
+        recovery_time += self.disk_repair_time
 
         # if recovery falls in one correlated failure interval, combines it with
         # this interval

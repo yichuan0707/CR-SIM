@@ -44,7 +44,6 @@ class FIFO(object):
         return self.occupation_points
 
     def occupy(self, ts, chosen_racks, num, time_cost):
-        print "occupy"
         queue_times = []
         racks = []
         for rack in chosen_racks:

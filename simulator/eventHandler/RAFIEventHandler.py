@@ -1,6 +1,7 @@
 from numpy import inf
 from math import ceil
 from enum  import Enum
+from random import sample
 
 from simulator.Log import info_logger, error_logger
 from simulator.Event import Event
@@ -41,9 +42,6 @@ class FailedSlice(object):
 
     def failedNum(self):
         return len(self.start_time)
-
-    def getIntervals(self):
-        return self.intervals
 
     def addInfo(self, start_time, end_time):
         self.start_time.append(start_time)
@@ -139,6 +137,7 @@ class RAFIEventHandler(EventHandler):
         if not self.rafi_recovery:
             raise Exception("RAFI recovery is not setting!")
 
+        self.node_state_check = 0.25
         self.detect_intervals = self.conf.detect_intervals
         self._my_assert(len(self.detect_intervals) == self.n - self.k)
         FailedSlice.intervals = self.detect_intervals
@@ -154,7 +153,6 @@ class RAFIEventHandler(EventHandler):
         outtoin_slices = {}
         intoin_slices = {}
 
-        current_total_slices = self.calCurrentTotalSlices(time)
         if isinstance(u, Machine):
             self.total_machine_failures += 1
             u.setLastFailureTime(e.getTime())
@@ -173,79 +171,99 @@ class RAFIEventHandler(EventHandler):
                     else:
                         self.total_long_temp_machine_failures += 1
 
-                disks = u.getChildren()
-                for child in disks:
-                    slice_indexes = child.getChildren()
-                    for slice_index in slice_indexes:
-                        if slice_index >= current_total_slices:
-                            continue
-                        if self.status[slice_index] == self.lost_slice:
-                            continue
+            disks = u.getChildren()
+            for child in disks:
+                slice_indexes = child.getChildren()
+                for slice_index in slice_indexes:
+                    if slice_index >= self.total_slices:
+                        continue
+                    if self.status[slice_index] == self.lost_slice:
+                        continue
+
+                    if e.info == 3:
+                        self.sliceDegraded(slice_index)
+                    else:
                         self.sliceDegradedAvailability(slice_index)
 
-                        repairable_before = self.isRepairable(slice_index)
-                        index = self.slice_locations[slice_index].index(child)
+                    repairable_before = self.isRepairable(slice_index)
+                    index = self.slice_locations[slice_index].index(child)
+                    if self.status[slice_index][index] == -1:
+                        continue
+                    if e.info == 3:
+                        self.status[slice_index][index] == -1
+                        self._my_assert(self.durableCount(slice_index) >= 0)
+                    else:
                         if self.status[slice_index][index] == 1:
                             self.status[slice_index][index] = 0
                         self._my_assert(self.availableCount(slice_index) >= 0)
 
-                        repairable_current = self.isRepairable(slice_index)
-                        if repairable_before and not repairable_current:
-                            self.unavailable_slice_count += 1
-                            self.startUnavailable(slice_index, time)
+                    repairable_current = self.isRepairable(slice_index)
+                    if repairable_before and not repairable_current:
+                        self.unavailable_slice_count += 1
+                        if slice_index in self.unavailable_slice_durations.keys():
+                            self.unavailable_slice_durations[slice_index].append([time])
+                        else:
+                            self.unavailable_slice_durations[slice_index] = [[time]]
 
-                        # rafi start
-                        unavailable = self.n - self.availableCount(slice_index)
-                        fs = FailedSlice()
-                        fs.addInfo(time, e.next_recovery_time)
-                        self.failed_slices[slice_index] = fs
+                    # rafi start
+                    unavailable = self.n - self.availableCount(slice_index)
+                    fs = FailedSlice()
+                    fs.addInfo(time, e.next_recovery_time)
+                    self.failed_slices[slice_index] = fs
 
-                        rafi_flag = fs.check(time)
-                        # slice from not in rafi event to in a rafi event
-                        if rafi_flag == FailedSlice.RAFITransition.OutToIn:
-                            outtoin_slices[slice_index] = fs
-                        # slice from lower risk rafi event to higher risk rafi event
-                        elif rafi_flag == FailedSlice.RAFITransition.InToIn:
-                            intoin_slices[slice_index] = fs
-                        else:  # don't care other two situations
-                            pass
+                    rafi_flag = fs.check(time)
+                    # slice from not in rafi event to in a rafi event
+                    if rafi_flag == FailedSlice.RAFITransition.OutToIn:
+                        outtoin_slices[slice_index] = fs
+                    # slice from lower risk rafi event to higher risk rafi event
+                    elif rafi_flag == FailedSlice.RAFITransition.InToIn:
+                        intoin_slices[slice_index] = fs
+                    else:  # don't care other two situations
+                        pass
 
-                outtoin_slice_indexes = outtoin_slices.keys()
-                intoin_slice_indexes = intoin_slices.keys()
-                new_rafi_slices = []
-                upgraded_rafi_slices = []
-                for slice_index in outtoin_slice_indexes:
-                    if self.availableCount(slice_index) <= self.recovery_threshold:
-                        new_rafi_slices.append(slice_index)
-                for slice_index in intoin_slice_indexes:
-                    if self.availableCount(slice_index) <= self.recovery_threshold:
-                        upgraded_rafi_slices.append(slice_index)
+                    if e.info == 3:
+                        # lost stripes have been recorded in unavailable_slice_durations
+                        if self.isLost(slice_index):
+                            info_logger.info(
+                                "time: " + str(time) + " slice:" + str(slice_index) +
+                                " durCount:" + str(self.durableCount(slice_index)) +
+                                " due to machine " + str(u.getID()))
+                            self.status[slice_index] = self.lost_slice
+                            self.undurable_slice_count += 1
+                            self.undurable_slice_infos.append((slice_index, time, "machine "+ str(u.getID())))
+                            continue
 
-                if new_rafi_slices != []:
-                    groups_in_new = [[] for i in xrange(self.n - self.k)]
-                    for slice_index in new_rafi_slices:
-                        unavailable = outtoin_slices[slice_index].failedNum()
-                        groups_in_new[unavailable-1].append(slice_index)
-                    for group in groups_in_new:
-                        if group != []:
-                            # timestamp of data starts to recover(ts+detect time+identify time)
-                            recover_time = ceil(time/self.node_state_check)*self.node_state_check + \
-                                           self.detect_intervals[unavailable-1]
-                            self.unfinished_rafi_events.addEvent(group, recover_time)
+            outtoin_slice_indexes = outtoin_slices.keys()
+            intoin_slice_indexes = intoin_slices.keys()
+            new_rafi_slices = []
+            upgraded_rafi_slices = []
+            for slice_index in outtoin_slice_indexes:
+                if self.availableCount(slice_index) <= self.recovery_threshold:
+                    new_rafi_slices.append(slice_index)
+            for slice_index in intoin_slice_indexes:
+                if self.availableCount(slice_index) <= self.recovery_threshold:
+                    upgraded_rafi_slices.append(slice_index)
 
-                if upgraded_rafi_slices != []:
-                    groups_in_upgraded = [[] for i in xrange(self.n - self.k)]
-                    for slice_index in upgraded_rafi_slices:
-                        unavailable = intoin_slices[slice_index].failedNum()
-                        groups_in_upgraded[unavailable-1].append(slice_index)
-                    for group in groups_in_upgraded:
-                        if group != []:
-                            recover_time = ceil(time/self.node_state_check)*self.node_state_check + \
-                                           self.detect_intervals[unavailable-1]
-                            self.unfinished_rafi_events.updateEvent(group, recover_time)
+            if new_rafi_slices != []:
+                groups_in_new = [[] for i in xrange(self.n - self.k)]
+                for slice_index in new_rafi_slices:
+                    unavailable = outtoin_slices[slice_index].failedNum()
+                    groups_in_new[unavailable-1].append(slice_index)
+                for group in groups_in_new:
+                    if group != []:
+                        # timestamp of data starts to recover(ts+detect time)
+                        recover_time = time + self.detect_intervals[unavailable-1]
+                        self.unfinished_rafi_events.addEvent(group, recover_time)
 
-                self.slices_degraded_avail_list.append((e.getTime(), self.current_avail_slice_degraded))
-
+            if upgraded_rafi_slices != []:
+                groups_in_upgraded = [[] for i in xrange(self.n - self.k)]
+                for slice_index in upgraded_rafi_slices:
+                    unavailable = intoin_slices[slice_index].failedNum()
+                    groups_in_upgraded[unavailable-1].append(slice_index)
+                for group in groups_in_upgraded:
+                    if group != []:
+                        recover_time = time + self.detect_intervals[unavailable-1]
+                        self.unfinished_rafi_events.updateEvent(group, recover_time)
         elif isinstance(u, Disk):
             self.total_disk_failures += 1
             u.setLastFailureTime(e.getTime())
@@ -254,7 +272,7 @@ class RAFIEventHandler(EventHandler):
 
             slice_indexes = u.getChildren()
             for slice_index in slice_indexes:
-                if slice_index >= current_total_slices:
+                if slice_index >= self.total_slices:
                     continue
                 if self.status[slice_index] == self.lost_slice:
                     continue
@@ -270,10 +288,12 @@ class RAFIEventHandler(EventHandler):
                 self._my_assert(self.durableCount(slice_index) >= 0)
 
                 repairable_current = self.isRepairable(slice_index)
-                # exclude the disk lost caused by node lost, it has already considered in node lost
-                if e.info != self.inherit_lost and repairable_before and not repairable_current:
+                if repairable_before and not repairable_current:
                     self.unavailable_slice_count += 1
-                    self.startUnavailable(slice_index, time)
+                    if slice_index in self.unavailable_slice_durations.keys():
+                        self.unavailable_slice_durations[slice_index].append([time])
+                    else:
+                        self.unavailable_slice_durations[slice_index] = [[time]]
 
                 if self.isLost(slice_index):
                     info_logger.info(
@@ -282,43 +302,8 @@ class RAFIEventHandler(EventHandler):
                         " due to disk " + str(u.getID()))
                     self.status[slice_index] = self.lost_slice
                     self.undurable_slice_count += 1
-                    self.endUnavailable(slice_index, time)
+                    self.undurable_slice_infos.append((slice_index, time, "disk "+ str(u.getID())))
                     continue
-
-                # is this slice one that needs recovering? if so, how much
-                # data to recover?
-                if self.status[slice_index] != self.lost_slice:
-                    threshold_crossed = False
-                    num_undurable = self.n - self.durableCount(slice_index)
-                    if num_undurable >= self.n - self.recovery_threshold:
-                        threshold_crossed = True
-
-                    num_unavailable = 0
-                    if self.availability_counts_for_recovery:
-                        num_unavailable = self.n - \
-                            self.availableCount(slice_index)
-                        if num_unavailable >= self.n - self.recovery_threshold:
-                            threshold_crossed = True
-                    if threshold_crossed:
-                        projected_bandwidth_need += self.k - 1 + \
-                            (self.n - self.status[slice_index].count(1))
-
-            # current recovery bandwidth goes up by projected bandwidth need
-            projected_bandwidth_need /= (e.next_recovery_time -
-                                         e.getTime())
-            u.setLastBandwidthNeed(projected_bandwidth_need)
-            self._my_assert(self.current_recovery_bandwidth >= 0)
-            self.current_recovery_bandwidth += projected_bandwidth_need
-            self._my_assert(self.current_recovery_bandwidth >= 0)
-            if self.current_recovery_bandwidth > self.max_recovery_bandwidth:
-                self.max_recovery_bandwidth = self.current_recovery_bandwidth
-            self._my_assert(self.current_recovery_bandwidth >= 0)
-
-            self.slices_degraded_list.append((e.getTime(),
-                                              self.current_slice_degraded))
-            self.slices_degraded_avail_list.append(
-                (e.getTime(), self.current_avail_slice_degraded))
-
         else:
             for child in u.getChildren():
                 self.handleFailure(child, time, e, queue)
@@ -329,57 +314,120 @@ class RAFIEventHandler(EventHandler):
         if e.ignore:
             return
 
-        current_total_slices = self.calCurrentTotalSlices(time)
         failed_slice_indexes = self.failed_slices.keys()
         if isinstance(u, Machine):
-            self.total_machine_repairs += 1
+            if e.info == 3 and not self.conf.queue_disable:
+                disks = u.getChildren()
+                empty_flag = True
+                for disk in disks:
+                    if disk.getChildren() != []:
+                        empty_flag = False
+                        break
+                if empty_flag:
+                    return
 
-            disks = u.getChildren()
-            for disk in disks:
-                slice_indexes = disk.getChildren()
-                for slice_index in slice_indexes:
-                    if slice_index >= current_total_slices:
-                        continue
-                    if self.status[slice_index] == self.lost_slice:
-                        continue
+                node_repair_time = self.conf.node_repair_time
+                node_repair_start = time - node_repair_time
+                all_racks = self.distributer.getAllRacks()
 
-                    delete_flag = True
-                    if slice_index in failed_slice_indexes:
-                        fs = self.failed_slices[slice_index]
-                        delete_flag = fs.delete(time)
+                if self.conf.data_placement == "sss":
+                    queue_rack_count = self.conf.rack_count
+                elif self.conf.data_placement == "pss" and not self.conf.hierarchical:
+                    queue_rack_count = self.n
+                elif self.conf.data_placement == "copyset" and not self.conf.hierarchical:
+                    queue_rack_count = self.conf.scatter_width
+                else:
+                    queue_rack_count = self.conf.distinct_racks
+                if self.conf.data_redundancy[0] in ["MSR", "MBR"]:
+                    num = self.conf.drs_handler.d
+                else:
+                    num = self.conf.drs_handler.k
+
+                chosen_racks = sample(all_racks, queue_rack_count)
+                recovery_time = self.contention_model.occupy(node_repair_start, chosen_racks, num, node_repair_time)
+                recovery_event = Event(Event.EventType.Recovered, recovery_time, u, 4)
+                queue.addEvent(recovery_event)
+            else:
+                self.total_machine_repairs += 1
+
+                disks = u.getChildren()
+                for disk in disks:
+                    slice_indexes = disk.getChildren()
+                    for slice_index in slice_indexes:
+                        if slice_index >= self.total_slices:
+                            continue
+                        if self.status[slice_index] == self.lost_slice:
+                            if slice_index in self.unavailable_slice_durations.keys() and \
+                                len(self.unavailable_slice_durations[slice_index][-1]) == 1:
+                                self.unavailable_slice_durations[slice_index][-1].append(time)
+                            continue
+
+                        delete_flag = True
+                        if slice_index in failed_slice_indexes:
+                            fs = self.failed_slices[slice_index]
+                            delete_flag = fs.delete(time)
+                            if delete_flag:
+                                self.failed_slices.pop(slice_index)
+
                         if delete_flag:
-                            self.failed_slices.pop(slice_index)
+                            if self.availableCount(slice_index) < self.n:
+                                repairable_before = self.isRepairable(slice_index)
 
-                    if delete_flag:
-                        if self.availableCount(slice_index) < self.n:
-                            repairable_before = self.isRepairable(slice_index)
+                                index = self.slice_locations[slice_index].index(disk)
+                                if self.status[slice_index][index] == 0:
+                                    self.status[slice_index][index] = 1
+                                self.sliceRecoveredAvailability(slice_index)
 
-                            index = self.slice_locations[slice_index].index(disk)
-                            if self.status[slice_index][index] == 0:
-                                self.status[slice_index][index] = 1
-                            self.sliceRecoveredAvailability(slice_index)
-
-                            repairable_current = self.isRepairable(slice_index)
-                            if not repairable_before and repairable_current:
-                                self.endUnavailable(slice_index, time)
-                        elif e.info == 1:  # temp & short failure
-                            self.anomalous_available_count += 1
-                        else:
-                            pass
-            self.slices_degraded_avail_list.append((e.getTime(), self.current_avail_slice_degraded))
-
+                                repairable_current = self.isRepairable(slice_index)
+                                if not repairable_before and repairable_current:
+                                    self.unavailable_slice_durations[slice_index][-1].append(time)
+                            elif e.info == 1:  # temp & short failure
+                                self.anomalous_available_count += 1
+                            else:
+                                pass
         elif isinstance(u, Disk):
-            self.total_disk_repairs += 1
-            # this disk finished recovering, so decrement current recovery b/w
-            self.current_recovery_bandwidth -= u.getLastBandwidthNeed()
-            if self.current_recovery_bandwidth > -1 and self.current_recovery_bandwidth < 0:
-                self.current_recovery_bandwidth = 0
-            self._my_assert(self.current_recovery_bandwidth >= 0)
+            if e.info != 4 and not self.queue_disable:
+                if len(u.getChildren()) == 0:
+                    return
 
+                all_racks = self.distributer.getAllRacks()
+                disk_repair_time = self.conf.disk_repair_time
+                disk_repair_start = time - disk_repair_time
+                if self.conf.data_placement == "sss":
+                    queue_rack_count = self.conf.rack_count
+                elif self.conf.data_placement == "pss" and not self.conf.hierarchical:
+                    queue_rack_count = self.n
+                elif self.conf.data_placement == "copyset" and not self.conf.hierarchical:
+                    queue_rack_count = self.conf.scatter_width
+                else:
+                    queue_rack_count = self.conf.distinct_racks
+                if self.conf.data_redundancy[0] in ["MSR", "MBR"]:
+                    num = self.conf.drs_handler.d
+                else:
+                    num = self.conf.drs_handler.k
+
+                if self.conf.data_redundancy[0] in ["MSR", "MBR"]:
+                    num = self.conf.drs_handler.d
+                else:
+                    num = self.conf.drs_handler.k
+                chosen_racks = sample(all_racks, queue_rack_count)
+                recovery_time = self.contention_model.occupy(disk_repair_start, chosen_racks, num, disk_repair_time)
+                recovery_event = Event(Event.EventType.Recovered, recovery_time, u, 4)
+                queue.addEvent(recovery_event)
+                return
+
+            self.total_disk_repairs += 1
             transfer_required = 0.0
             slice_indexes = u.getChildren()
             for slice_index in slice_indexes:
-                if slice_index >= current_total_slices:
+                if slice_index >= self.total_slices:
+                    continue
+                if self.status[slice_index] == self.lost_slice:
+                    if slice_index in self.unavailable_slice_durations.keys() and \
+                        len(self.unavailable_slice_durations[slice_index][-1]) == 1:
+                        self.unavailable_slice_durations[slice_index][-1].append(time)
+                    continue
+                if not self.isRepairable(slice_index):
                     continue
 
                 if slice_index in failed_slice_indexes:
@@ -390,16 +438,11 @@ class RAFIEventHandler(EventHandler):
                     else:
                         continue
 
-                if self.status[slice_index] == self.lost_slice:
-                    continue
-                if not self.isRepairable(slice_index):
-                    continue
-
                 threshold_crossed = False
                 actual_threshold = self.recovery_threshold
                 if self.conf.lazy_only_available:
                     actual_threshold = self.n - 1
-                if self.current_slice_degraded < self.conf.max_degraded_slices*current_total_slices:
+                if self.current_slice_degraded < self.conf.max_degraded_slices*self.total_slices:
                     actual_threshold = self.recovery_threshold
 
                 if self.durableCount(slice_index) <= actual_threshold:
@@ -414,19 +457,16 @@ class RAFIEventHandler(EventHandler):
                     if self.status[slice_index][index] == -1 or self.status[slice_index][index] == -2:
                         repairable_before = self.isRepairable(slice_index)
 
-                        if self.lazy_recovery or self.parallel_repair:
-                            rc = self.parallelRepair(slice_index)
-                        else:
-                            rc = self.repair(slice_index, index)
+                        # if self.lazy_recovery or self.parallel_repair:
+                        rc = self.parallelRepair(slice_index, True)
+                        # else:
+                        #     rc = self.repair(slice_index, index)
                         if slice_index in u.getSlicesHitByLSE():
                             u.slices_hit_by_LSE.remove(slice_index)
                         self.total_repairs += 1
-                        transfer_required += rc
-                        self.total_repair_transfers += rc
-
-                        repairable_current = self.isRepairable(slice_index)
-                        if not repairable_before and repairable_current:
-                            self.endUnavailable(slice_index, time)
+                        ratio = self.getRatio()
+                        transfer_required += rc * ratio
+                        self.total_repair_transfers += rc * ratio
 
                     # must come after all counters are updated
                     self.sliceRecovered(slice_index)
@@ -434,8 +474,8 @@ class RAFIEventHandler(EventHandler):
             for child in u.getChildren():
                 self.handleRecovery(child, time, e, queue)
 
-    def handleEagerRecoveryStart(self, u, time, e, queue):
-        return
+    # def handleEagerRecoveryStart(self, u, time, e, queue):
+    #     return
 
     def handleRAFIRecovery(self, u, time, e, queue):
         if e.ignore:
@@ -446,6 +486,9 @@ class RAFIEventHandler(EventHandler):
         UnfinishRAFIEvents.queue = queue
         for slice_index in slices:
             if self.status[slice_index] == self.lost_slice:
+                if slice_index in self.unavailable_slice_durations.keys() and \
+                    len(self.unavailable_slice_durations[slice_index][-1]) == 1:
+                    self.unavailable_slice_durations[slice_index][-1].append(time)
                 continue
             if self.isLost(slice_index):
                 self.status[slice_index] = self.lost_slice
@@ -453,22 +496,16 @@ class RAFIEventHandler(EventHandler):
             if not self.isRepairable(slice_index):
                 continue
 
-            repairable_before = self.isRepairable(slice_index)
             # if self.availableCount(slice_index) <= self.recovery_threshold:
-            rc = self.parallelRepair(slice_index)
-            transfer_required += rc
-            self.total_repair_transfers += rc
+            rc = self.parallelRepair(slice_index, True)
+            ratio = self.getRatio()
+            transfer_required += rc * ratio
+            self.total_repair_transfers += rc * ratio
             if slice_index in self.failed_slices.keys():
                 self.failed_slices.pop(slice_index)
 
-            repairable_current = self.isRepairable(slice_index)
-            if not repairable_before and repairable_current:
-                self.endUnavailable(slice_index, time)
-
+            # repairable_current = self.isRepairable(slice_index)
+            # if not repairable_before and repairable_current:
+            #    self.endUnavailable(slice_index, time)
             self.sliceRecovered(slice_index)
-
         self.unfinished_rafi_events.removeEvent(e)
-
-    def handleRealRecovery(self, u, time, e):
-        pass
-

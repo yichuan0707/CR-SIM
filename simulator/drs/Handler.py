@@ -3,7 +3,7 @@ from simulator.drs.LRC import LRC
 from simulator.drs.XORBAS import XORBAS
 from simulator.drs.MSR import MSR
 from simulator.drs.MBR import MBR
-from simulator.drs.DOUBLER import DOUBLER
+from simulator.drs.DRC import DRC
 
 
 def getDRSHandler(redun_name, params):
@@ -17,8 +17,8 @@ def getDRSHandler(redun_name, params):
         handler = MSR(params)
     elif redun_name.upper() == "MBR":
         handler = MBR(params)
-    elif redun_name.upper() == "DOUBLER":
-        handler = DOUBLER(params)
+    elif redun_name.upper() == "DRC":
+        handler = DRC(params)
     else:
         raise Exception("Incorrect data redundancy name!")
     return handler

@@ -34,7 +34,6 @@ class RandomDistribute(DataDistribute):
             addition_space *= chunks_per_disk * disks_per_machine * machines_per_rack
         else:
             raise Exception("Incorrect style")
-        print addition_space
 
         return addition_space
 
@@ -190,7 +189,6 @@ class RandomDistribute(DataDistribute):
         self._my_assert(self.slice_locations != [])
 
         additions = self.xml.systemDiskChanges(self.root, ts, inc_capcity, style, new_chunks_per_disk, d_generators, m_generators, r_generators)
-        print "inc_slices:", inc_slices
         self._my_assert(inc_slices * self.n <= self._additionSpaceInBlocks(style, additions))
 
         if style in [0, 1, 2, 3]:

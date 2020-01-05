@@ -46,7 +46,7 @@
 	 			<eventGenerator>
 	 				<name>recoveryGenerator2</name>
 	 				<class>simulator.failure.Real</class>
-	 				<gamma>0.25</gamma>
+	 				<gamma>0</gamma>
 	 				<lamda>0.25</lamda>
 	 			</eventGenerator>
 	 			<component>
@@ -63,8 +63,8 @@
 	 					<eventGenerator>
 	 						<name>recoveryGenerator</name>
 	 						<class>simulator.failure.Real</class>
-              <gamma>6.0</gamma>
-	 						<lamda>6.0</lamda>
+              <gamma>12.0</gamma>
+	 						<lamda>0.0</lamda>
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>latentErrorGenerator</name>
@@ -76,7 +76,7 @@
 	 					<eventGenerator>
 	 						<name>scrubGenerator</name>
 	 						<class>simulator.failure.Period</class>
-	 						<gamma>336.0</gamma>
+	 						<gamma>504.0</gamma>
 	 					</eventGenerator>
 	 			</component>
 	 		</component>

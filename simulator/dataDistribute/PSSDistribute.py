@@ -85,31 +85,47 @@ class HierPSSDistribute(PSSDistribute):
             for i in xrange(self.n % self.r):
                 self.slices_chunks_on_racks[i] += 1
 
+    # make sure the n disks in each groups on r distinct racks.
     def divideDisksIntoGroups(self, disks):
         retry_count = 0
         groups = []
+        copy_sets = []
+        machines = self.getAllMachines()
 
-        while True:
-            group = []
-            if len(disks) < self.r:
-                break
+        machine_indexes = [[i for i in xrange(self.conf.machines_per_rack)] for j in xrange(self.conf.rack_count)]
+        rack_indexes = [i for i in xrange(self.conf.rack_count)]
 
-            chosen_racks = sample(disks, self.r)
-            for i, rack_disks in enumerate(chosen_racks):
-                if len(rack_disks) < self.slices_chunks_on_racks[i]:
-                    retry_count += 1
-                    break
-                if retry_count > 100:
-                    error_logger.error("Divide disks into groups failed")
-                    raise Exception("Divide disks into groups failed")
+        while retry_count < 100:
+            copy_set = []
+            try:
+                retry_count += 1
+                chosen_rack_indexes = sample(rack_indexes, self.r)
+            except ValueError:
+                continue
 
-                diskes = sample(rack_disks, self.slices_chunks_on_racks[i])
-                for disk in diskes:
-                    group.append(disk)
-                    rack_disks.remove(disk)
-                if len(rack_disks) == 0:
-                    disks.remove(rack_disks)
-            if len(group) == self.n:
+            flag = True
+            for i, rack_index in enumerate(chosen_rack_indexes):
+                if len(machine_indexes[rack_index]) < self.slices_chunks_on_racks[i]:
+                    flag = False
+            if not flag:
+                continue
+
+            for i, rack_index in enumerate(chosen_rack_indexes):
+                rack = machines[rack_index]
+
+                m_indexes = sample(machine_indexes[rack_index], self.slices_chunks_on_racks[i])
+                for m_index in m_indexes:
+                    copy_set.append(rack[m_index])
+                    machine_indexes[rack_index].remove(m_index)
+                if len(machine_indexes[rack_index]) < self.n/self.r:
+                    rack_indexes.remove(rack_index)
+            copy_sets.append(copy_set)
+
+        for copy_set in copy_sets:
+            for i in xrange(self.conf.disks_per_machine):
+                group = []
+                for machine in copy_set:
+                    group.append(machine.getChildren()[i])
                 groups.append(group)
 
         self.groups = groups
@@ -120,7 +136,7 @@ class HierPSSDistribute(PSSDistribute):
 if __name__ == "__main__":
     conf = Configuration()
     xml = XMLParser(conf)
-    distribute = PSSDistribute(xml)
+    distribute = HierPSSDistribute(xml)
 
     disks = []
     distribute.getAllDisks(distribute.getRoot(), disks)
@@ -129,13 +145,16 @@ if __name__ == "__main__":
         format_output = "group " + str(i) + ": "
         for disk in group:
             format_output += "  " + disk.toString()
-        # print format_output
+        print format_output
 
 
-    total_slices = 419431
+    total_slices = 619431
     distribute.distributeSlices(distribute.getRoot(), total_slices)
+    """
     for i in xrange(total_slices):
         format_output = "slice index " + str(i) + ": "
         for disk in distribute.slice_locations[i]:
             format_output += "  " + disk.toString()
         print format_output
+    """
+    distribute.printToFile()

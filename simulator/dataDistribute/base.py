@@ -10,7 +10,7 @@ class DataDistribute(object):
 
     def __init__(self, xml):
         self.xml = xml
-        self.conf = self.xml.config
+        self.conf = self.xml.config()
         self.n = self.conf.drs_handler.n
         self.k = self.conf.drs_handler.k
         self.num_chunks_diff_racks = self.conf.num_chunks_diff_racks
@@ -52,16 +52,16 @@ class DataDistribute(object):
         return self.total_slices
 
     def returnRackCount(self):
-        return len(self.root.getChildren()[0].getChildren())
+        return self.conf.rack_count
 
     def returnMachinesPerRack(self):
-        return len(self.root.getChildren()[0].getChildren()[0].getChildren())
+        return self.conf.machines_per_rack
 
     def returnDisksPerMachine(self):
-        return len(self.root.getChildren()[0].getChildren()[0].getChildren()[0].getChildren())
+        return self.conf.disks_per_machine
 
     def returnDiskCapacity(self):
-        return self.root.getChildren()[0].getChildren()[0].getChildren()[0].getChildren()[0].getDiskCapacity()
+        return self.conf.disk_capacity
 
     def returnTotalDiskCount(self):
         rack_count = self.returnRackCount()
@@ -115,8 +115,8 @@ class DataDistribute(object):
         racks = self.getAllRacks()
         for rack in racks:
             rack_machines = rack.getChildren()
-            for m in rack_machines:
-                machines.append(m)
+            # for m in rack_machines:
+            machines.append(rack_machines)
 
         return machines
 
