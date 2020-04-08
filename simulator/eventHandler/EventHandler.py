@@ -718,23 +718,27 @@ class EventHandler(object):
         ret = Result()
 
         # data loss probability and data unvailable probability
-        data_loss_prob = format(float(self.undurable_slice_count)/self.total_slices, ".4e")
+        data_loss_prob = format(float(self.undurable_slice_count)/(self.total_slices*self.n), ".4e")
 
         Result.undurable_count = self.undurable_slice_count
         Result.unavailable_count = self.unavailable_slice_count
         Result.undurable_infos = self.undurable_slice_infos
         Result.unavailable_slice_durations = self.unavailable_slice_durations
-        Result.data_loss_prob = data_loss_prob
+        Result.PDL = data_loss_prob
 
         TTFs, TTRs = self.processDuration()
-        Result.unavailable_prob = self.calUA(TTFs, TTRs)
-        Result.unavailable_prob1 = self.calUADowntime(TTRs)
+        Result.PUA = self.calUA(TTFs, TTRs)
+        # Result.unavailable_prob1 = self.calUADowntime(TTRs)
 
         Result.undurable_count_details = self.calUndurableDetails()
         Result.NOMDL = self.NOMDL()
 
-        # repair bandwidth in TiBs
-        Result.total_repair_transfers = format(float(self.total_repair_transfers)/pow(2,20), ".4e")
+        # total repair cost in PiBs
+        Result.TRC = format(float(self.total_repair_transfers)/pow(2,30), ".2e")
+
+	years = self.end_time/8760
+        # total storage cost in PiB*year
+        Result.TSC = format(float(self.conf.total_active_storage)*self.n/self.k*years, ".2e")
 
         if not self.queue_disable:
             queue_times, avg_queue_time = self.contention_model.statistics()

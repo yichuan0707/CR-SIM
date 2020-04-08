@@ -27,14 +27,14 @@
 	 			<name>machine</name>
 	 			<count>200</count>
 	 			<class>simulator.unit.Machine</class>
-        <fail_fraction>0.033</fail_fraction>
+        <fail_fraction>0.026</fail_fraction>
 				<fail_timeout>0.25</fail_timeout>
 	 			<eventGenerator>
 	 				<name>failureGenerator</name>
 	 				<class>simulator.failure.WeibullGenerator</class>
 	 				<gamma>0.0</gamma>
-	 				<lamda>3000</lamda>
-	 				<beta>1</beta>
+	 				<lamda>8375</lamda>
+	 				<beta>0.994</beta>
 	 			</eventGenerator>
 	 			<eventGenerator>
 	 				<name>recoveryGenerator</name>
@@ -46,7 +46,7 @@
 	 			<eventGenerator>
 	 				<name>recoveryGenerator2</name>
 	 				<class>simulator.failure.Real</class>
-	 				<gamma>0.25</gamma>
+	 				<gamma>0</gamma>
 	 				<lamda>0.25</lamda>
 	 			</eventGenerator>
 	 			<component>
@@ -57,8 +57,8 @@
 	 						<name>failureGenerator</name>
 	 						<class>simulator.failure.WeibullGenerator</class>
 	 						<gamma>0.0</gamma>
-	 						<lamda>87600</lamda>
-	 						<beta>1.12</beta>
+	 						<lamda>16257.8</lamda>
+	 						<beta>1.30</beta>
 	 					</eventGenerator>
 	 					<eventGenerator>
 	 						<name>recoveryGenerator</name>

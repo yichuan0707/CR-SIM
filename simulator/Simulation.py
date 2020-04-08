@@ -116,7 +116,7 @@ class Simulation(object):
 
         for i in xrange(num_iterations):
             result = self.run()
-            outputs = [result.data_loss_prob, result.unavailable_prob, result.unavailable_prob1, result.total_repair_transfers]
+            outputs = [result.PDL, result.PUA, result.TRC, result.TSC]
             if not self.conf.queue_disable:
                 outputs.append(result.queue_times)
                 outputs.append(result.avg_queue_time)

@@ -7,21 +7,24 @@ class Result(object):
     undurable_count_details = None
     unavailable_slice_durations = {}
     NOMDL = 0
-    data_loss_prob = 0.0
+    PDL = 0.0
     # unavailability = MTTR/(MTTF + MTTR)
-    unavailable_prob = 0.0
+    PUA = 0.0
     # unavailability = downtime/(uptime+downtime)
-    unavailable_prob1 = 0.0
-    total_repair_transfers = 0.0
+    PUA1 = 0.0
+    # total repair cost, in PiBs
+    TRC = 0.0
+    # total storage cost, in PiB*year
+    TSC = 0.0
     queue_times = 0
     avg_queue_time = 0.0
 
     def toString(self):
         return "unavailable=" + str(Result.unavailable_count) + \
             "  undurable=" + str(Result.undurable_count) + \
-            " unavailable_prob=" + str(Result.unavailable_prob) + \
-            " unavailable_prob1=" + str(Result.unavailable_prob1) + \
-            " data loss prob=" + str(Result.data_loss_prob) + \
-            " total_repair_transfers=" + str(Result.total_repair_transfers) + "TiB" + \
+            " PUA=" + str(Result.PUA) + \
+            " PDL=" + str(Result.PDL) + \
+            " TRC=" + str(Result.TRC) + "PiBs" + \
+            " TSC=" + str(Result.TSC) + "PiB*year" + \
             " NOMDL=" + str(Result.NOMDL) + " queue times=" + str(Result.queue_times) + \
             " average queue time=" + str(Result.avg_queue_time) + "h"
